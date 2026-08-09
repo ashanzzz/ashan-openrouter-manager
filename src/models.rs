@@ -166,6 +166,57 @@ pub struct SecretStatus {
     pub newapi_test_token: bool,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionCheck {
+    pub state: String,
+    pub checked_at: Option<String>,
+    pub message: String,
+    pub latency_ms: Option<u64>,
+    pub detail: Option<String>,
+}
+
+impl Default for ConnectionCheck {
+    fn default() -> Self {
+        Self { state: "unknown".into(), checked_at: None, message: "尚未测试".into(), latency_ms: None, detail: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConnectionChecks {
+    pub openrouter: ConnectionCheck,
+    pub newapi: ConnectionCheck,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConnectionUpdate {
+    pub newapi_base_url: String,
+    pub newapi_admin_user_id: String,
+    pub openrouter_api_key: Option<String>,
+    pub newapi_admin_token: Option<String>,
+    pub newapi_test_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionSaveResponse {
+    pub ok: bool,
+    pub message: String,
+    pub settings: AppSettings,
+    pub secrets: SecretStatus,
+    pub connections: ConnectionChecks,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionTestResult {
+    pub ok: bool,
+    pub connection: String,
+    pub state: String,
+    pub message: String,
+    pub checked_at: String,
+    pub latency_ms: u64,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusResponse {
     pub healthy: bool,
@@ -175,6 +226,7 @@ pub struct StatusResponse {
     pub last_run: Option<SyncRun>,
     pub scheduler: SchedulerStatus,
     pub secrets: SecretStatus,
+    pub connections: ConnectionChecks,
 }
 
 #[derive(Debug, Clone, Deserialize)]

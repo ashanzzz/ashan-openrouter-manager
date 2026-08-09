@@ -52,10 +52,11 @@ Then:
 1. Configure the OpenRouter API key.
 2. Configure New API base URL, administrator token and administrator user ID.
 3. Test both connections.
-4. Save settings.
-5. Run **Scan only** and inspect the top three.
-6. Run **Sync now**. On first sync, the service creates exactly three fixed managed channels.
-7. Enable automatic sync after the first successful live sync.
+4. Click **保存连接配置**. Connection fields and secrets are saved together.
+5. Test OpenRouter and New API separately. Successful tests display a persistent green **已连接** state with latency and result details.
+6. Run **立即检查** and inspect the top three.
+7. Run **立即同步**. On first sync, the service creates exactly three fixed managed channels.
+8. Enable automatic sync after the first successful live sync.
 
 ## Unraid
 
@@ -108,7 +109,22 @@ Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive 
 | `WEBUI_PORT` | Compose only | `8080` | host-side published port; container remains `8080` |
 | `RUST_LOG` | no | `info` | tracing filter |
 
-`PORT` is intentionally **not** a user setting in v3.0.1. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
+`PORT` is intentionally **not** a user setting in v3.0.2. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
+
+
+## Connection settings UX
+
+Connection settings are intentionally separated from model-selection settings:
+
+- `New API 地址` and administrator ID are saved through the dedicated connection endpoint.
+- Non-empty OpenRouter/New API secrets are encrypted and saved in the same connection action.
+- Runtime refreshes never overwrite unsaved form drafts.
+- Connection tests always use the saved runtime configuration; if a credential or endpoint has unsaved changes, the UI asks the user to save first.
+- Successful tests persist a green `已连接` state in SQLite with timestamp, latency and result details.
+- Failed tests persist a red `连接失败` state and surface the concrete backend error.
+- General model/automation settings cannot accidentally erase the saved New API address or administrator ID.
+
+This fixes the previous state-flow bug where saving only secrets triggered a global refresh that reloaded an empty persisted `newapi_base_url` and cleared the user's input.
 
 ## Safety model
 
@@ -157,14 +173,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.1**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.2**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.1 simplify single-port deployment"
-git tag -a v3.0.1 -m "Release v3.0.1"
+git commit -m "release: v3.0.2 fix connection settings and UX"
+git tag -a v3.0.2 -m "Release v3.0.2"
 git push origin main --tags
 ```
 

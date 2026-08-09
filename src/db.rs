@@ -3,7 +3,7 @@ use std::{path::Path, str::FromStr};
 use chrono::Utc;
 use sqlx::{sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions}, Row, SqlitePool};
 
-use crate::{error::AppError, models::{AppSettings, ManagedChannel, ScanResult, SyncRun}};
+use crate::{error::AppError, models::{AppSettings, ConnectionChecks, ManagedChannel, ScanResult, SyncRun}};
 
 #[derive(Clone)]
 pub struct Database { pool: SqlitePool }
@@ -52,12 +52,35 @@ impl Database {
         }
     }
 
-    pub async fn save_settings(&self, settings: &AppSettings) -> Result<(), AppError> {
+    fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
         if settings.candidate_pool < 3 { return Err(AppError::bad("candidate_pool must be at least 3")); }
         if settings.preflight_concurrency == 0 { return Err(AppError::bad("preflight_concurrency must be at least 1")); }
         if settings.sync_interval_minutes < 60 { return Err(AppError::bad("sync interval must be at least 60 minutes")); }
         if settings.alias_model.trim().is_empty() { return Err(AppError::bad("alias_model cannot be empty")); }
+        Ok(())
+    }
+
+    pub async fn save_settings(&self, settings: &AppSettings) -> Result<(), AppError> {
+        Self::validate_settings(settings)?;
         self.set_kv("settings", &serde_json::to_string(settings)?).await?;
+        Ok(())
+    }
+
+    pub async fn save_connection_bundle(&self, settings: &AppSettings, secrets: &[(String, String)]) -> Result<(), AppError> {
+        Self::validate_settings(settings)?;
+        let settings_json = serde_json::to_string(settings)?;
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query("INSERT INTO kv(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at")
+            .bind("settings").bind(settings_json).bind(&now).execute(&mut *tx).await?;
+
+        for (name, ciphertext) in secrets {
+            sqlx::query("INSERT INTO secrets(name,ciphertext,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET ciphertext=excluded.ciphertext, updated_at=excluded.updated_at")
+                .bind(name).bind(ciphertext).bind(&now).execute(&mut *tx).await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -74,6 +97,18 @@ impl Database {
 
     pub async fn has_secret(&self, name: &str) -> Result<bool, AppError> {
         Ok(self.get_secret_ciphertext(name).await?.is_some())
+    }
+
+    pub async fn get_connection_checks(&self) -> Result<ConnectionChecks, AppError> {
+        match self.get_kv("connection_checks").await? {
+            Some(v) => Ok(serde_json::from_str(&v).unwrap_or_default()),
+            None => Ok(ConnectionChecks::default()),
+        }
+    }
+
+    pub async fn save_connection_checks(&self, checks: &ConnectionChecks) -> Result<(), AppError> {
+        self.set_kv("connection_checks", &serde_json::to_string(checks)?).await?;
+        Ok(())
     }
 
     pub async fn save_last_scan(&self, scan: &ScanResult) -> Result<(), AppError> {

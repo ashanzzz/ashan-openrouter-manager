@@ -36,3 +36,15 @@ Business logic must not depend on the web framework, scheduler or storage repres
 - No mutation of foreign New API resources.
 - Secret-at-rest protection.
 - Fail closed when validation is incomplete.
+
+## Connection configuration boundary (v3.0.2)
+
+Connection identity is a separate persistence concern from model-selection settings:
+
+- `/api/connections` owns New API base URL, administrator user ID and non-empty secret updates.
+- Connection settings plus newly entered encrypted secrets are committed in one SQLite transaction.
+- `/api/settings` preserves the persisted New API base URL and administrator user ID instead of accepting them from the general settings payload.
+- Connection checks are persisted separately from configuration as `unknown`, `connected` or `failed` state.
+- The React UI keeps editable drafts separate from server-persisted settings; background status refreshes never replace in-progress edits.
+
+This separation prevents UI refresh behavior from becoming a data-loss path and keeps connection verification aligned with the exact configuration used by scheduled synchronization.

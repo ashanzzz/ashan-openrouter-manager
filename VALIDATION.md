@@ -40,3 +40,17 @@ The first live New API sync must still be tested against the exact New API build
 - Removed unused QEMU and optional Docker Hub login from GHCR CI.
 - Changed workflow concurrency from commit SHA to Git ref so main/tag builds do not cancel each other.
 - Preserved the frontend `tsconfig.node.json` `noEmit` fix from current GitHub main.
+
+
+## v3.0.2 connection-state refactor
+
+- Root cause fixed: saving secrets no longer triggers a settings reload that wipes an unsaved New API base URL.
+- Added a dedicated connection persistence API and separated connection settings from general settings mutations.
+- Connection settings plus newly entered encrypted secrets are written in one SQLite transaction to avoid partial saves.
+- Added persistent connection-check state (`unknown`, `connected`, `failed`) stored in SQLite KV state.
+- Successful connection tests return service-specific messages, latency and resource counts.
+- Frontend now keeps saved settings and editable drafts as separate state, so background refreshes do not destroy user edits.
+- Frontend actions use specific success/error messages instead of the previous generic `操作成功`.
+- UI visibly differentiates configured-but-untested from verified connected state.
+- TypeScript application structure was checked with TypeScript 5.8.3 using temporary React type shims; temporary shims are excluded from the release package.
+- Rust toolchain is still unavailable in this sandbox, so GitHub Actions remains the authoritative Rust/Docker build verification for this release.

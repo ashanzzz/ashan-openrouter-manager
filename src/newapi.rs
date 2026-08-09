@@ -13,7 +13,7 @@ pub struct NewApiClient { http: Client, base: String, token: String, user_id: St
 
 impl NewApiClient {
     pub fn new(http: Client, settings: &AppSettings, token: String) -> Result<Self, AppError> {
-        if settings.newapi_base_url.trim().is_empty() { return Err(AppError::bad("New API base URL is empty")); }
+        if settings.newapi_base_url.trim().is_empty() { return Err(AppError::bad("New API 地址为空")); }
         Ok(Self { http, base: settings.newapi_base_url.trim_end_matches('/').to_string(), token, user_id: settings.newapi_admin_user_id.clone() })
     }
 
