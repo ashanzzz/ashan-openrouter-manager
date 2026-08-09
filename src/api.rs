@@ -293,7 +293,7 @@ async fn save_secrets(
 }
 
 async fn scan(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    Ok(Json(json!({"ok": true, "scan": crate::sync::scan(&state).await?})))
+    Ok(Json(json!({"ok": true, "scan": crate::sync::scan(state).await?})))
 }
 
 async fn sync_now(
@@ -302,7 +302,7 @@ async fn sync_now(
 ) -> Result<Json<Value>, AppError> {
     Ok(Json(json!({
         "ok": true,
-        "run": crate::sync::run(&state, "manual", req.force).await?
+        "run": crate::sync::run(state, "manual", req.force).await?
     })))
 }
 

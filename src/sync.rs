@@ -36,10 +36,10 @@ impl SyncLogger {
 
     async fn log(
         &self,
-        level: &str,
-        stage: &str,
-        category: &str,
-        message: impl Into<String>,
+        level: &'static str,
+        stage: &'static str,
+        category: &'static str,
+        message: impl Into<String> + Send,
         detail: Option<String>,
     ) {
         let entry = SyncLogEntry {
@@ -55,13 +55,16 @@ impl SyncLogger {
         let _ = self.db.append_run_log(&entry).await;
     }
 
-    async fn error(&self, stage: &str, error: &AppError) {
+    async fn error(&self, stage: &'static str, error: &AppError) {
+        // Convert the borrowed error to owned text before awaiting, so the logger
+        // future does not retain an arbitrary error reference across the await.
+        let detail = error.to_string();
         self.log(
             "error",
             stage,
             classify_error(stage, error),
             format!("{}阶段失败", stage_label(stage)),
-            Some(error.to_string()),
+            Some(detail),
         )
         .await;
     }
@@ -119,7 +122,7 @@ fn classify_error(stage: &str, error: &AppError) -> &'static str {
     }
 }
 
-async fn secret(state: &AppState, name: &str) -> Result<String, AppError> {
+async fn secret(state: AppState, name: &'static str) -> Result<String, AppError> {
     let encrypted = state
         .db
         .get_secret_ciphertext(name)
@@ -129,7 +132,7 @@ async fn secret(state: &AppState, name: &str) -> Result<String, AppError> {
 }
 
 async fn log_health_event(
-    logger: &SyncLogger,
+    logger: SyncLogger,
     event: tester::HealthEvent,
     total_rounds: usize,
 ) {
@@ -174,16 +177,16 @@ async fn log_health_event(
     }
 }
 
-pub async fn scan(state: &AppState) -> Result<ScanResult, AppError> {
+pub async fn scan(state: AppState) -> Result<ScanResult, AppError> {
     let settings = state.db.get_settings().await?;
-    let key = secret(state, "openrouter_api_key").await?;
+    let key = secret(state.clone(), "openrouter_api_key").await?;
     let client = OpenRouterClient::new(state.http.clone(), &settings.openrouter_api_base);
     let models = client.list_models(&key).await?;
     let total = models.len();
     let benchmarks = client.benchmarks(&key).await?;
     let (free_count, candidates) = ranking::rank(models, benchmarks, &settings);
     let tested = tester::health_check(
-        &state.db,
+        state.db.clone(),
         client,
         key,
         candidates,
@@ -220,12 +223,12 @@ pub async fn start_manual(state: AppState, force: bool) -> Result<SyncStartRespo
         .clone()
         .try_lock_owned()
         .map_err(|_| AppError::conflict("已有同步任务正在执行，请等待当前任务完成"))?;
-    let (run, logger) = begin_run(&state, "manual").await?;
+    let (run, logger) = begin_run(state.clone(), "manual").await?;
     let run_id = run.id.clone();
 
     tokio::spawn(async move {
         let _guard = guard;
-        let _ = execute_run(&state, run, logger, force).await;
+        let _ = execute_run(state, run, logger, force).await;
     });
 
     Ok(SyncStartResponse {
@@ -235,18 +238,18 @@ pub async fn start_manual(state: AppState, force: bool) -> Result<SyncStartRespo
     })
 }
 
-pub async fn run(state: &AppState, trigger: &str, force: bool) -> Result<SyncRun, AppError> {
+pub async fn run(state: AppState, trigger: &'static str, force: bool) -> Result<SyncRun, AppError> {
     let guard = state
         .sync_guard
         .clone()
         .try_lock_owned()
         .map_err(|_| AppError::conflict("已有同步任务正在执行"))?;
-    let (run, logger) = begin_run(state, trigger).await?;
+    let (run, logger) = begin_run(state.clone(), trigger).await?;
     execute_run_with_guard(state, guard, run, logger, force).await
 }
 
 async fn execute_run_with_guard(
-    state: &AppState,
+    state: AppState,
     _guard: OwnedMutexGuard<()>,
     run: SyncRun,
     logger: SyncLogger,
@@ -255,7 +258,7 @@ async fn execute_run_with_guard(
     execute_run(state, run, logger, force).await
 }
 
-async fn begin_run(state: &AppState, trigger: &str) -> Result<(SyncRun, SyncLogger), AppError> {
+async fn begin_run(state: AppState, trigger: &'static str) -> Result<(SyncRun, SyncLogger), AppError> {
     let started = Utc::now().to_rfc3339();
     let run = SyncRun {
         id: Uuid::new_v4().to_string(),
@@ -286,12 +289,12 @@ async fn begin_run(state: &AppState, trigger: &str) -> Result<(SyncRun, SyncLogg
 }
 
 async fn execute_run(
-    state: &AppState,
+    state: AppState,
     mut run: SyncRun,
     logger: SyncLogger,
     force: bool,
 ) -> Result<SyncRun, AppError> {
-    let result = run_inner(state, &logger, force).await;
+    let result = run_inner(state.clone(), logger.clone(), force).await;
     run.ended_at = Utc::now().to_rfc3339();
 
     match result {
@@ -322,9 +325,9 @@ async fn execute_run(
 }
 
 async fn scan_with_logger(
-    state: &AppState,
-    logger: &SyncLogger,
-    settings: &crate::models::AppSettings,
+    state: AppState,
+    logger: SyncLogger,
+    settings: crate::models::AppSettings,
 ) -> Result<ScanResult, AppError> {
     logger
         .log(
@@ -342,7 +345,7 @@ async fn scan_with_logger(
         )
         .await;
 
-    let key = match secret(state, "openrouter_api_key").await {
+    let key = match secret(state.clone(), "openrouter_api_key").await {
         Ok(v) => v,
         Err(e) => {
             logger.error("configuration", &e).await;
@@ -415,7 +418,7 @@ async fn scan_with_logger(
         )
         .await;
 
-    let (free_count, candidates) = ranking::rank(models, benchmarks, settings);
+    let (free_count, candidates) = ranking::rank(models, benchmarks, &settings);
     logger
         .log(
             "success",
@@ -454,7 +457,7 @@ async fn scan_with_logger(
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let health_future = tester::health_check(
-        &state.db,
+        state.db.clone(),
         client.clone(),
         key.clone(),
         candidates,
@@ -471,13 +474,13 @@ async fn scan_with_logger(
             result = &mut health_future => {
                 let models = result?;
                 while let Ok(event) = event_rx.try_recv() {
-                    log_health_event(logger, event, total_rounds).await;
+                    log_health_event(logger.clone(), event, total_rounds).await;
                 }
                 break models;
             }
             event = event_rx.recv() => {
                 if let Some(event) = event {
-                    log_health_event(logger, event, total_rounds).await;
+                    log_health_event(logger.clone(), event, total_rounds).await;
                 }
             }
         }
@@ -549,12 +552,12 @@ async fn scan_with_logger(
 }
 
 async fn run_inner(
-    state: &AppState,
-    logger: &SyncLogger,
+    state: AppState,
+    logger: SyncLogger,
     force: bool,
 ) -> Result<(bool, Vec<String>, String), AppError> {
     let settings = state.db.get_settings().await?;
-    let scan = scan_with_logger(state, logger, &settings).await?;
+    let scan = scan_with_logger(state.clone(), logger.clone(), settings.clone()).await?;
     if scan.selected.len() != 3 {
         return Err(AppError::bad(
             scan.warning
@@ -563,14 +566,14 @@ async fn run_inner(
     }
     let selected_ids: Vec<String> = scan.selected.iter().map(|m| m.id.clone()).collect();
 
-    let openrouter_key = match secret(state, "openrouter_api_key").await {
+    let openrouter_key = match secret(state.clone(), "openrouter_api_key").await {
         Ok(v) => v,
         Err(e) => {
             logger.error("configuration", &e).await;
             return Err(e);
         }
     };
-    let admin_token = match secret(state, "newapi_admin_token").await {
+    let admin_token = match secret(state.clone(), "newapi_admin_token").await {
         Ok(v) => v,
         Err(e) => {
             logger.error("configuration", &e).await;
@@ -801,7 +804,7 @@ async fn run_inner(
                 return Err(e);
             }
         }
-        if let Err(e) = maybe_e2e(state, &client, &settings, Some(logger)).await {
+        if let Err(e) = maybe_e2e(state.clone(), client.clone(), settings.clone(), Some(logger.clone())).await {
             let _ = client.delete_exact(&settings, &created).await;
             return Err(e);
         }
@@ -876,7 +879,7 @@ async fn run_inner(
             .await
         {
             logger.error("newapi_update", &error).await;
-            rollback(&client, &settings, &openrouter_key, &previous, logger).await;
+            rollback(client.clone(), settings.clone(), openrouter_key.clone(), previous.clone(), logger.clone()).await;
             return Err(error);
         }
         logger
@@ -902,7 +905,7 @@ async fn run_inner(
             .await;
         if let Err(error) = client.test_channel(c.channel_id, &settings.alias_model).await {
             logger.error("newapi_test", &error).await;
-            rollback(&client, &settings, &openrouter_key, &previous, logger).await;
+            rollback(client.clone(), settings.clone(), openrouter_key.clone(), previous.clone(), logger.clone()).await;
             return Err(error);
         }
         logger
@@ -916,8 +919,8 @@ async fn run_inner(
             .await;
     }
 
-    if let Err(error) = maybe_e2e(state, &client, &settings, Some(logger)).await {
-        rollback(&client, &settings, &openrouter_key, &previous, logger).await;
+    if let Err(error) = maybe_e2e(state.clone(), client.clone(), settings.clone(), Some(logger.clone())).await {
+        rollback(client.clone(), settings.clone(), openrouter_key.clone(), previous.clone(), logger.clone()).await;
         return Err(error);
     }
 
@@ -933,11 +936,11 @@ async fn run_inner(
 }
 
 async fn rollback(
-    client: &NewApiClient,
-    settings: &crate::models::AppSettings,
-    key: &str,
-    previous: &[ManagedChannel],
-    logger: &SyncLogger,
+    client: NewApiClient,
+    settings: crate::models::AppSettings,
+    key: String,
+    previous: Vec<ManagedChannel>,
+    logger: SyncLogger,
 ) {
     logger
         .log(
@@ -949,8 +952,8 @@ async fn rollback(
         )
         .await;
     let mut failures = Vec::new();
-    for c in previous {
-        match client.update_model(settings, c, key, &c.model_id).await {
+    for c in &previous {
+        match client.update_model(&settings, c, &key, &c.model_id).await {
             Ok(_) => {
                 logger
                     .log(
@@ -990,13 +993,13 @@ async fn rollback(
 }
 
 async fn maybe_e2e(
-    state: &AppState,
-    client: &NewApiClient,
-    settings: &crate::models::AppSettings,
-    logger: Option<&SyncLogger>,
+    state: AppState,
+    client: NewApiClient,
+    settings: crate::models::AppSettings,
+    logger: Option<SyncLogger>,
 ) -> Result<(), AppError> {
     if !settings.e2e_test_enabled {
-        if let Some(logger) = logger {
+        if let Some(logger) = logger.as_ref() {
             logger
                 .log(
                     "info",
@@ -1009,16 +1012,16 @@ async fn maybe_e2e(
         }
         return Ok(());
     }
-    let token = match secret(state, "newapi_test_token").await {
+    let token = match secret(state.clone(), "newapi_test_token").await {
         Ok(v) => v,
         Err(e) => {
-            if let Some(logger) = logger {
+            if let Some(logger) = logger.as_ref() {
                 logger.error("e2e", &e).await;
             }
             return Err(e);
         }
     };
-    if let Some(logger) = logger {
+    if let Some(logger) = logger.as_ref() {
         logger
             .log(
                 "info",
@@ -1031,7 +1034,7 @@ async fn maybe_e2e(
     }
     match client.e2e_test(&token, &settings.alias_model).await {
         Ok(_) => {
-            if let Some(logger) = logger {
+            if let Some(logger) = logger.as_ref() {
                 logger
                     .log(
                         "success",
@@ -1045,7 +1048,7 @@ async fn maybe_e2e(
             Ok(())
         }
         Err(e) => {
-            if let Some(logger) = logger {
+            if let Some(logger) = logger.as_ref() {
                 logger.error("e2e", &e).await;
             }
             Err(e)

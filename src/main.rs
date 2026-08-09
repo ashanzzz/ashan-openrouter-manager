@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     db.ensure_default_settings().await?;
 
     let http = Client::builder()
-        .user_agent("ashan-openrouter-manager/3.0.8")
+        .user_agent("ashan-openrouter-manager/3.0.9")
         .timeout(std::time::Duration::from_secs(45))
         .build()?;
 
@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler_status: Arc::new(RwLock::new(SchedulerStatus::default())),
     };
 
-    tokio::spawn(scheduler::run(state.clone()));
+    let scheduler_state = state.clone();
 
     let api_router = api::router(state.clone());
     let index = web_dir.join("index.html");
@@ -79,6 +79,17 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], INTERNAL_HTTP_PORT));
     info!(%addr, "Ashan OpenRouter Manager v3 listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+
+    // Keep the scheduler on the main Tokio task instead of spawning it. This avoids
+    // imposing a `Send + 'static` requirement on the scheduler future while still
+    // running the HTTP server and scheduler concurrently on the multi-thread runtime.
+    tokio::select! {
+        _ = scheduler::run(scheduler_state) => {
+            return Err(anyhow::anyhow!("scheduler exited unexpectedly"));
+        }
+        result = axum::serve(listener, app) => {
+            result?;
+        }
+    }
     Ok(())
 }

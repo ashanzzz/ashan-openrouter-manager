@@ -42,7 +42,7 @@ pub async fn run(state: AppState) {
                 status.next_run_local = None;
                 status.mode = schedule_mode_name(&settings.schedule_mode).into();
             }
-            state.scheduler_notify.notified().await;
+            state.scheduler_notify.clone().notified_owned().await;
             continue;
         }
 
@@ -58,7 +58,7 @@ pub async fn run(state: AppState) {
                     status.next_run_local = None;
                     status.mode = schedule_mode_name(&settings.schedule_mode).into();
                 }
-                state.scheduler_notify.notified().await;
+                state.scheduler_notify.clone().notified_owned().await;
                 continue;
             }
         };
@@ -83,11 +83,11 @@ pub async fn run(state: AppState) {
         tokio::select! {
             _ = sleep(Duration::from_secs(wait_seconds)) => {
                 info!("scheduled sync starting");
-                if let Err(error) = crate::sync::run(&state, "schedule", false).await {
+                if let Err(error) = crate::sync::run(state.clone(), "schedule", false).await {
                     error!(error = %error, "scheduled sync failed");
                 }
             }
-            _ = state.scheduler_notify.notified() => continue,
+            _ = state.scheduler_notify.clone().notified_owned() => continue,
         }
     }
 }

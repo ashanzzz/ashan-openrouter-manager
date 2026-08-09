@@ -465,7 +465,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.8</span>
+            <span>Manager v3.0.9</span>
           </div>
         </div>
         <nav>

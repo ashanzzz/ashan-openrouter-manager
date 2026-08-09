@@ -41,7 +41,7 @@ async fn run_attempt(
 }
 
 pub async fn health_check(
-    db: &Database,
+    db: Database,
     client: OpenRouterClient,
     key: String,
     mut candidates: Vec<RankedModel>,
@@ -66,16 +66,23 @@ pub async fn health_check(
             });
         }
 
-        let mut pending = stream::iter(candidates.iter().map(|model| {
-            run_attempt(
-                client.clone(),
-                key.clone(),
-                batch_id.clone(),
-                model.id.clone(),
-                round,
-            )
-        }))
-        .buffer_unordered(concurrency.max(1));
+        // Materialize owned futures before awaiting. This prevents the health-check
+        // future from carrying a borrow of `candidates` across `.await`, which is
+        // important when the whole sync job is executed by `tokio::spawn`.
+        let round_attempts = candidates
+            .iter()
+            .map(|model| {
+                run_attempt(
+                    client.clone(),
+                    key.clone(),
+                    batch_id.clone(),
+                    model.id.clone(),
+                    round,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut pending = stream::iter(round_attempts)
+            .buffer_unordered(concurrency.max(1));
 
         while let Some(attempt) = pending.next().await {
             db.record_model_health_attempt(&attempt).await?;

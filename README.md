@@ -101,7 +101,7 @@ HOST_PORT=18080 bash scripts/install-unraid-template.sh
 
 ## Health-gate model selection policy
 
-AOM v3.0.8 treats model health as a gate rather than a ranking signal. The selection policy is:
+AOM v3.0.9 treats model health as a gate rather than a ranking signal. The selection policy is:
 
 ```text
 Capability ranking (Intelligence -> Coding -> Agentic)
@@ -161,7 +161,7 @@ AOM keeps `auto_ban` as a boolean business setting internally, but the current N
 
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.8 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.9 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -249,14 +249,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.8**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.9**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.8 make health admission-only for Top3"
-git tag -a v3.0.8 -m "Release v3.0.8"
+git commit -m "release: v3.0.9 fix Tokio Send lifetime CI failure"
+git tag -a v3.0.9 -m "Release v3.0.9"
 git push origin main --tags
 ```
 

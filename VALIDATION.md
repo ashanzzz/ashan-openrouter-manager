@@ -108,3 +108,12 @@ The first live New API sync must still be tested against the exact New API build
 - Qualified candidates preserve the original capability/benchmark rank; the first three become R1/R2/R3.
 - Regression test covers a case where capability rank #2 has 33.3% health while lower-ranked models have 100%/66.7%; rank #2 must remain R2.
 - No SQLite schema or AppData reset is required from v3.0.7.
+
+
+## v3.0.9 Tokio Send/lifetime CI fix
+
+- Root cause from GitHub Actions: Rust rejected the manual sync `tokio::spawn` future and the spawned scheduler future with `implementation of Send is not general enough`.
+- Sync execution boundaries now own cloned state/logger/settings/database handles.
+- Health-check round futures own model IDs and request state before `.await`; no candidate iterator borrow is carried through the request loop.
+- Scheduler uses owned Notify futures and is polled concurrently with Axum from `main` rather than being passed to `tokio::spawn`.
+- Frontend/health-selection behavior is unchanged from the finalized v3.0.8 policy.

@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.9
+
+- Fixed the Rust CI failure introduced by the multi-round health engine: background sync execution now owns `AppState`, `SyncLogger`, settings and database handles across async boundaries instead of exposing borrowed lifetimes to `tokio::spawn`.
+- Changed model health checking to take an owned database handle and materialize owned per-round request futures before awaiting them.
+- Changed scheduler wakeups to `Notify::notified_owned()` and run the scheduler alongside Axum on the main Tokio task instead of spawning the scheduler future.
+- Preserved the finalized selection policy: health is admission-only; every model at or above the configured threshold remains ranked strictly by benchmark/capability rank for R1/R2/R3.
+- No SQLite schema change and no AppData reset are required.
+
 ## v3.0.8
 
 - Changed model health from a partial ranking signal to a pure admission gate.
