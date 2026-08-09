@@ -352,7 +352,7 @@ details summary { cursor: pointer; font-weight: 720; }
 }
 
 
-/* v3.0.5 hybrid manual + managed routing pool */
+/* v3.0.6 hybrid manual + managed routing pool */
 .routing-card { margin-top: 18px; overflow: hidden; }
 .routing-head { align-items: flex-start; }
 .route-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }

@@ -146,6 +146,7 @@ const categoryLabels: Record<string, string> = {
   openrouter_api: 'OpenRouter API',
   openrouter_permission: 'OpenRouter 权限',
   newapi_api: 'New API',
+  newapi_schema: 'New API API Schema',
   newapi_permission: 'New API 权限',
   safety_conflict: '安全冲突',
   safety: '安全校验',
@@ -440,7 +441,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.5</span>
+            <span>Manager v3.0.6</span>
           </div>
         </div>
         <nav>

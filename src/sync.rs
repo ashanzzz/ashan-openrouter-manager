@@ -100,6 +100,12 @@ fn classify_error(stage: &str, error: &AppError) -> &'static str {
         }
         AppError::Conflict(_) => "safety_conflict",
         AppError::BadRequest(message) => {
+            if message.contains("New API API Schema 兼容性错误")
+                || message.contains("cannot unmarshal")
+                || message.contains("Go struct field")
+            {
+                return "newapi_schema";
+            }
             if message.contains("尚未配置") || message.contains("地址为空") || message.contains("用户 ID 为空") || message.contains("不能为空") {
                 return "configuration";
             }
