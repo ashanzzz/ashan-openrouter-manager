@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.5
+
+- Added first-class hybrid routing: user-managed New API channels and AOM-managed OpenRouter Top3 channels may expose the same public alias at the same time.
+- Removed the incorrect assumption that `ashan-ai-model` implies AOM ownership. Manual channels using the alias are classified as `manual` and remain read-only.
+- AOM ownership is now based on the exact IDs stored in SQLite plus AOM identity verification; only those exact channels can be updated, enabled, disabled, tested as managed slots, or rolled back.
+- Hard safety blocking is now reserved for orphaned AOM identity channels (explicit OWNER_ID, exact AOM slot name, or AOM tag + prefix) that are not registered locally.
+- Added `GET /api/routing` to expose a safe New API routing-pool diagnostic view without returning channel secrets.
+- Added a routing-pool dashboard showing manual channels, AOM managed channels, enabled counts, priority/weight information, mapping targets, and the current highest-priority relationship.
+- Sync logs now record each manual alias channel as preserved/read-only instead of reporting it as an alias conflict.
+- Shared group/tag/prefix channels that do not claim AOM ownership are diagnostic-only and never mutated.
+- No database reset is required when upgrading from v3.0.4.
+
 ## v3.0.4
 
 - Added persistent per-run synchronization logs stored in SQLite (`sync_run_logs`).
@@ -7,12 +19,10 @@
 - Added an inline real-time log console below **立即同步**, with stage, severity, category, timestamp, message and diagnostic detail.
 - Added history log drill-down so completed/failed runs can be inspected later.
 - Added explicit failure categories for configuration, OpenRouter permission/API, New API permission/API, network/internal errors and safety conflicts.
-- New API HTTP 401/403 errors are now reported as administrator permission/token/user-ID failures.
-- OpenRouter HTTP 401/403 errors are now reported as OpenRouter permission failures.
-- Refined foreign-channel safety detection: sharing the managed group alone is a warning, not a hard conflict. Alias occupation, alias mapping occupation, and orphaned explicit AOM v3 channels remain hard conflicts.
-- Foreign-channel diagnostics now record channel ID, name, reason and whether the finding blocks synchronization.
+- New API HTTP 401/403 errors are reported as administrator permission/token/user-ID failures.
+- OpenRouter HTTP 401/403 errors are reported as OpenRouter permission failures.
 - Added detailed logs for model catalog fetch, benchmark fetch, ranking, each preflight result, New API connection, identity verification, channel creation/update/test, E2E testing and rollback.
-- Existing v3.0.3 databases upgrade in place; no AppData reset is required.
+- Existing databases upgrade in place; no AppData reset is required.
 
 ## v3.0.3
 

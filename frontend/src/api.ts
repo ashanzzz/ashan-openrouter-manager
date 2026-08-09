@@ -2,6 +2,7 @@ import type {
   ConnectionSaveResponse,
   ConnectionTestResult,
   ConnectionUpdate,
+  RoutingPoolStatus,
   Run,
   Scan,
   Settings,
@@ -50,6 +51,7 @@ export const api = {
     }),
   models: () => request<{ scan?: Scan | null }>('/api/models'),
   history: () => request<{ runs: Run[] }>('/api/history'),
+  routing: () => request<RoutingPoolStatus>('/api/routing'),
   scan: () => request<{ ok: true; scan: Scan }>('/api/scan', { method: 'POST', body: '{}' }),
   sync: (force = false) =>
     request<{ ok: true; run: Run }>('/api/sync', {

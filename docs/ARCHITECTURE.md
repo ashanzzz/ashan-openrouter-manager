@@ -63,10 +63,22 @@ The scheduler remains an orchestration adapter only; it never contains model-sel
 Manual **立即同步** is deliberately not a shortcut around validation: it always calls the normal sync pipeline, which performs a fresh OpenRouter scan, benchmark ranking, real preflight, Top-3 comparison and safe New API update/rollback.
 
 
-## Observable sync boundary (v3.0.4)
+## Observable sync boundary (v3.0.5)
 
 Manual sync is split into **start** and **progress** operations. `POST /api/sync/start` acquires the global sync lock, persists a `running` SyncRun, and spawns the workflow. The UI polls `GET /api/sync/{id}`.
 
 `sync_run_logs` is append-only per run and records `level`, `stage`, `category`, `message`, and optional `detail`. The same entries power the live console and history drill-down. This keeps UI diagnostics independent of process stdout while preserving the existing single-container architecture.
 
-Foreign-channel inspection distinguishes hard alias/ownership conflicts from legacy/shared-group warnings. Only hard conflicts stop mutation.
+Routing-pool inspection allows manual channels to share the public alias. Only orphaned explicit AOM identity stops mutation; manual and related channels remain read-only diagnostics.
+
+
+## Hybrid New API routing ownership (v3.0.5)
+
+The public alias is deliberately decoupled from resource ownership. Multiple New API channels may expose the same alias. AOM classifies them into:
+
+- **Manual Pool**: serves the alias but is not locally registered as AOM-owned. Read-only.
+- **Managed Pool**: exact Channel IDs stored in SQLite and verified against AOM name/tag/remark/base URL identity.
+- **Orphan AOM**: claims AOM identity but is not locally registered. Fail-closed until manually investigated.
+- **Related**: shares group/tag/prefix metadata but neither serves the alias nor claims enough AOM identity to be adopted. Diagnostic only.
+
+This keeps New API routing concerns (alias, priority, weight) separate from AOM ownership concerns (exact ID + identity verification).

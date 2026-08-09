@@ -69,6 +69,38 @@ export interface Channel {
   updated_at: string
 }
 
+
+export interface RoutingChannel {
+  id: number
+  name: string
+  status: number
+  priority: number
+  weight: number
+  group: string
+  tag: string
+  models: string[]
+  mapping_target?: string | null
+  classification: 'manual' | 'managed' | 'orphan' | 'related' | string
+  reason: string
+}
+
+export interface RoutingPoolStatus {
+  available: boolean
+  alias_model: string
+  total_channels: number
+  manual_channels: RoutingChannel[]
+  managed_channels: RoutingChannel[]
+  orphan_channels: RoutingChannel[]
+  related_channels: RoutingChannel[]
+  manual_enabled: number
+  managed_enabled: number
+  highest_manual_priority?: number | null
+  highest_managed_priority?: number | null
+  route_mode: string
+  message: string
+  error?: string | null
+}
+
 export interface Run {
   id: string
   started_at: string

@@ -55,7 +55,7 @@ The first live New API sync must still be tested against the exact New API build
 - TypeScript application structure was checked with TypeScript 5.8.3 using temporary React type shims; temporary shims are excluded from the release package.
 - Rust toolchain is still unavailable in this sandbox, so GitHub Actions remains the authoritative Rust/Docker build verification for this release.
 
-## v3.0.4 observability checks
+## v3.0.5 observability checks
 
 - `sync_run_logs` is created with `CREATE TABLE IF NOT EXISTS`, so existing AppData upgrades in place.
 - Manual sync starts asynchronously and returns a Run ID before long-running network work begins.
@@ -66,3 +66,13 @@ The first live New API sync must still be tested against the exact New API build
 - No secret plaintext is included in sync-log messages or details.
 - Frontend TypeScript structure was checked with the sandbox TypeScript 5.8.3 compiler and temporary React type shims.
 - The sandbox still has no Rust toolchain or Docker daemon; GitHub Actions remains the final `cargo build` / Docker build authority.
+
+## v3.0.5 hybrid-routing checks
+
+- Public alias equality is no longer used as an ownership signal.
+- Manual channels exposing `ashan-ai-model` are classified read-only and do not block initialization or synchronization.
+- AOM mutation paths still require exact local Channel IDs plus live identity verification.
+- Orphaned explicit AOM identity channels remain fail-closed.
+- `/api/routing` returns only non-secret routing metadata (ID, name, status, priority, weight, group/tag, model list and alias mapping target).
+- Overview renders Manual Pool and AOM Managed Pool separately and explains the current priority relationship.
+- Existing SQLite schema remains compatible; no AppData reset is required.

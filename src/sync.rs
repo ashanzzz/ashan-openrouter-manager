@@ -77,6 +77,7 @@ fn stage_label(stage: &str) -> &'static str {
         "preflight" => "候选模型真实调用",
         "newapi_connection" => "New API 连接与权限",
         "newapi_conflicts" => "New API 渠道冲突检查",
+        "newapi_routing" => "New API 路由池检查",
         "newapi_identity" => "受管渠道身份校验",
         "newapi_create" => "New API 渠道初始化",
         "newapi_update" => "New API 渠道更新",
@@ -531,79 +532,120 @@ async fn run_inner(
             return Err(e);
         }
     };
-    if let Err(e) = client.test_connection().await {
-        logger.error("newapi_connection", &e).await;
-        return Err(e);
-    }
+    let mut managed = state.db.list_managed_channels().await?;
+    logger
+        .log(
+            "info",
+            "newapi_routing",
+            "routing",
+            format!("正在读取 New API 路由池；本地登记 AOM 受管渠道 {} 条", managed.len()),
+            Some(format!("统一别名: {}；手动渠道允许与 AOM 自动渠道共存", settings.alias_model)),
+        )
+        .await;
+
+    let routing = match client.inspect_routing_pool(&settings, &managed).await {
+        Ok(v) => v,
+        Err(e) => {
+            logger.error("newapi_connection", &e).await;
+            return Err(e);
+        }
+    };
+
     logger
         .log(
             "success",
             "newapi_connection",
             "newapi_api",
-            "New API 连接成功，管理员渠道读取权限正常",
+            format!("New API 连接成功，管理员渠道读取权限正常；共读取 {} 条渠道", routing.total_channels),
             None,
         )
         .await;
 
-    let mut managed = state.db.list_managed_channels().await?;
     logger
         .log(
             "info",
-            "newapi_conflicts",
-            "safety",
-            format!("开始检查外部渠道；本地登记受管渠道 {} 条", managed.len()),
-            None,
+            "newapi_routing",
+            "routing",
+            format!(
+                "路由池识别完成：手动同别名 {} 条（启用 {}），AOM 受管 {} 条（启用 {}），孤儿 AOM {} 条",
+                routing.manual_channels.len(),
+                routing.manual_enabled,
+                routing.managed_channels.len(),
+                routing.managed_enabled,
+                routing.orphan_channels.len()
+            ),
+            Some(routing.message.clone()),
         )
         .await;
-    let report = match client.inspect_foreign_channels(&settings, &managed).await {
-        Ok(v) => v,
-        Err(e) => {
-            logger.error("newapi_conflicts", &e).await;
-            return Err(e);
-        }
-    };
 
-    for finding in report.warnings() {
+    for channel in &routing.manual_channels {
+        logger
+            .log(
+                "info",
+                "newapi_routing",
+                "manual_channel",
+                format!("保留手动渠道 ID {} [{}]；AOM 只读", channel.id, channel.name),
+                Some(format!(
+                    "status={}；priority={}；weight={}；group={}；映射目标={}；{}",
+                    channel.status,
+                    channel.priority,
+                    channel.weight,
+                    if channel.group.is_empty() { "—" } else { channel.group.as_str() },
+                    channel.mapping_target.as_deref().unwrap_or("原生/未设置映射"),
+                    channel.reason
+                )),
+            )
+            .await;
+    }
+
+    for channel in &routing.related_channels {
         logger
             .log(
                 "warning",
-                "newapi_conflicts",
-                "legacy_channel",
-                format!("外部渠道 ID {} [{}] 仅警告，不阻止同步", finding.id, finding.name),
-                Some(finding.reason.clone()),
+                "newapi_routing",
+                "related_channel",
+                format!("发现相关渠道 ID {} [{}]，仅记录诊断", channel.id, channel.name),
+                Some(channel.reason.clone()),
             )
             .await;
     }
-    let hard = report.hard_conflicts();
-    for finding in &hard {
+
+    for channel in &routing.orphan_channels {
         logger
             .log(
                 "error",
-                "newapi_conflicts",
-                "safety_conflict",
-                format!("外部渠道 ID {} [{}] 构成硬冲突", finding.id, finding.name),
-                Some(finding.reason.clone()),
+                "newapi_routing",
+                "manager_orphan",
+                format!("发现孤儿 AOM 渠道 ID {} [{}]，为避免误接管而阻止同步", channel.id, channel.name),
+                Some(channel.reason.clone()),
             )
             .await;
     }
-    if !hard.is_empty() {
-        let summary = hard
+
+    if !routing.orphan_channels.is_empty() {
+        let summary = routing
+            .orphan_channels
             .iter()
-            .map(|f| format!("{}:{}", f.id, f.reason))
+            .map(|c| format!("{}:{}", c.id, c.reason))
             .collect::<Vec<_>>()
             .join(" | ");
         return Err(AppError::conflict(format!(
-            "发现 {} 个 New API 硬冲突渠道；未修改任何渠道。{}",
-            hard.len(), summary
+            "发现 {} 个未登记的 AOM 身份渠道；手动同别名渠道不会阻止同步。{}",
+            routing.orphan_channels.len(),
+            summary
         )));
     }
+
     logger
         .log(
             "success",
-            "newapi_conflicts",
-            "safety",
-            "渠道冲突检查通过",
-            Some("同分组/相似名称仅作为历史渠道警告；只有别名占用、映射占用或明确的孤儿 v3 渠道会阻断同步".into()),
+            "newapi_routing",
+            "routing",
+            "路由池安全检查通过；手动渠道与 AOM 自动 Top3 可以共存",
+            Some(format!(
+                "AOM 只会修改 SQLite 登记的精确 Channel ID；不会修改 {} 条手动同别名渠道。{}",
+                routing.manual_channels.len(), routing.message
+            )),
         )
         .await;
 

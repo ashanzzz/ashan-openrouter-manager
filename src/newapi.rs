@@ -9,33 +9,10 @@ use serde_json::{json, Value};
 
 use crate::{
     error::AppError,
-    models::{AppSettings, ManagedChannel, RankedModel},
+    models::{AppSettings, ManagedChannel, RankedModel, RoutingChannel, RoutingPoolStatus},
 };
 
 const OWNER_ID: &str = "ashan-openrouter-manager-v3";
-
-#[derive(Debug, Clone)]
-pub struct ForeignChannelFinding {
-    pub id: i64,
-    pub name: String,
-    pub hard: bool,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ForeignChannelReport {
-    pub findings: Vec<ForeignChannelFinding>,
-}
-
-impl ForeignChannelReport {
-    pub fn hard_conflicts(&self) -> Vec<&ForeignChannelFinding> {
-        self.findings.iter().filter(|f| f.hard).collect()
-    }
-
-    pub fn warnings(&self) -> Vec<&ForeignChannelFinding> {
-        self.findings.iter().filter(|f| !f.hard).collect()
-    }
-}
 
 #[derive(Clone)]
 pub struct NewApiClient {
@@ -155,83 +132,20 @@ impl NewApiClient {
             .unwrap_or(value))
     }
 
-    /// Inspect foreign channels without treating a shared business group as ownership.
-    /// Hard conflicts are reserved for actual alias occupation or orphaned v3-owned channels.
-    pub async fn inspect_foreign_channels(
+    /// Build a read-only view of every New API channel related to the public alias.
+    ///
+    /// Ownership is intentionally NOT inferred from the public alias. Manual channels are
+    /// allowed to expose the same alias and remain completely read-only. A hard safety block
+    /// is reserved for channels that explicitly claim AOM ownership but are not registered in
+    /// the local managed_channels table.
+    pub async fn inspect_routing_pool(
         &self,
         settings: &AppSettings,
         managed: &[ManagedChannel],
-    ) -> Result<ForeignChannelReport, AppError> {
-        let ids: HashSet<i64> = managed.iter().map(|c| c.channel_id).collect();
-        let mut report = ForeignChannelReport::default();
-
-        for channel in self.list_channels().await? {
-            let id = channel.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
-            if ids.contains(&id) {
-                continue;
-            }
-
-            let name = str_field(&channel, "name");
-            let tag = str_field(&channel, "tag");
-            let group = str_field(&channel, "group");
-            let remark = str_field(&channel, "remark");
-            let models = channel_models(&channel);
-            let mapping = parse_mapping(&channel);
-
-            let alias_in_models = models.iter().any(|m| m == &settings.alias_model);
-            let alias_in_mapping = mapping.get(&settings.alias_model).is_some();
-            let explicit_owner = remark.contains(OWNER_ID);
-            let v3_identity = explicit_owner
-                || (tag == settings.managed_tag && name.starts_with(&settings.channel_name_prefix));
-
-            if alias_in_models || alias_in_mapping {
-                let mut reasons = Vec::new();
-                if alias_in_models {
-                    reasons.push(format!("models 包含统一别名 {}", settings.alias_model));
-                }
-                if alias_in_mapping {
-                    reasons.push(format!("model_mapping 占用了 {}", settings.alias_model));
-                }
-                report.findings.push(ForeignChannelFinding {
-                    id,
-                    name: name.clone(),
-                    hard: true,
-                    reason: reasons.join("；"),
-                });
-                continue;
-            }
-
-            if v3_identity {
-                report.findings.push(ForeignChannelFinding {
-                    id,
-                    name: name.clone(),
-                    hard: true,
-                    reason: "检测到明确的 AOM v3 身份，但本地数据库没有登记该 Channel ID，可能是孤儿渠道".into(),
-                });
-                continue;
-            }
-
-            let mut warning_reasons = Vec::new();
-            if group == settings.managed_group || channel_groups(&channel).iter().any(|g| g == &settings.managed_group) {
-                warning_reasons.push(format!("使用相同业务分组 {}", settings.managed_group));
-            }
-            if tag == settings.managed_tag {
-                warning_reasons.push(format!("使用相同标签 {}", settings.managed_tag));
-            }
-            if name.starts_with(&settings.channel_name_prefix) {
-                warning_reasons.push(format!("名称前缀与 {} 相同", settings.channel_name_prefix));
-            }
-            if !warning_reasons.is_empty() {
-                report.findings.push(ForeignChannelFinding {
-                    id,
-                    name,
-                    hard: false,
-                    reason: warning_reasons.join("；"),
-                });
-            }
-        }
-
-        Ok(report)
+    ) -> Result<RoutingPoolStatus, AppError> {
+        let channels = self.list_channels().await?;
+        let total_channels = channels.len();
+        Ok(classify_routing_pool(settings, managed, channels, total_channels))
     }
 
     pub async fn assert_owned(
@@ -536,6 +450,157 @@ impl NewApiClient {
     }
 }
 
+fn classify_routing_pool(
+    settings: &AppSettings,
+    managed: &[ManagedChannel],
+    channels: Vec<Value>,
+    total_channels: usize,
+) -> RoutingPoolStatus {
+    let managed_ids: HashSet<i64> = managed.iter().map(|c| c.channel_id).collect();
+    let mut manual_channels = Vec::new();
+    let mut managed_channels = Vec::new();
+    let mut orphan_channels = Vec::new();
+    let mut related_channels = Vec::new();
+
+    for channel in channels {
+        let id = channel.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+        let name = str_field(&channel, "name");
+        let status = channel.get("status").and_then(|v| v.as_i64()).unwrap_or_default();
+        let priority = channel.get("priority").and_then(|v| v.as_i64()).unwrap_or_default();
+        let weight = channel.get("weight").and_then(|v| v.as_i64()).unwrap_or_default();
+        let group = str_field(&channel, "group");
+        let tag = str_field(&channel, "tag");
+        let remark = str_field(&channel, "remark");
+        let models = channel_models(&channel);
+        let mapping = parse_mapping(&channel);
+        let mapping_target = mapping.get(&settings.alias_model).cloned();
+        let serves_alias = models.iter().any(|m| m == &settings.alias_model) || mapping_target.is_some();
+        let explicit_owner = remark.contains(OWNER_ID);
+        let exact_manager_name = (1..=3).any(|rank| name == format!("{} R{}", settings.channel_name_prefix, rank));
+        let manager_identity = explicit_owner
+            || exact_manager_name
+            || (tag == settings.managed_tag && name.starts_with(&settings.channel_name_prefix));
+        let is_managed = managed_ids.contains(&id);
+
+        let mut entry = RoutingChannel {
+            id,
+            name: name.clone(),
+            status,
+            priority,
+            weight,
+            group: group.clone(),
+            tag: tag.clone(),
+            models: models.clone(),
+            mapping_target,
+            classification: String::new(),
+            reason: String::new(),
+        };
+
+        if is_managed {
+            entry.classification = "managed".into();
+            entry.reason = "Channel ID 已登记在本地 managed_channels；AOM 可对该渠道执行精确校验与更新".into();
+            managed_channels.push(entry);
+            continue;
+        }
+
+        if manager_identity {
+            entry.classification = "orphan".into();
+            entry.reason = if explicit_owner {
+                "remark 明确包含 AOM OWNER_ID，但本地数据库没有登记该 Channel ID".into()
+            } else if exact_manager_name {
+                "渠道名称与 AOM 固定槽位完全相同，但本地数据库没有登记该 Channel ID".into()
+            } else {
+                "渠道同时使用 AOM 标签与名称前缀，但本地数据库没有登记该 Channel ID".into()
+            };
+            orphan_channels.push(entry);
+            continue;
+        }
+
+        if serves_alias {
+            entry.classification = "manual".into();
+            entry.reason = format!(
+                "手动/外部渠道合法提供统一别名 {}；AOM 只读，不修改、不删除、不调整优先级或权重",
+                settings.alias_model
+            );
+            manual_channels.push(entry);
+            continue;
+        }
+
+        let same_group = group == settings.managed_group
+            || channel_groups(&channel).iter().any(|g| g == &settings.managed_group);
+        let same_tag = tag == settings.managed_tag;
+        let same_prefix = name.starts_with(&settings.channel_name_prefix);
+        if same_group || same_tag || same_prefix {
+            let mut reasons = Vec::new();
+            if same_group { reasons.push(format!("相同业务分组 {}", settings.managed_group)); }
+            if same_tag { reasons.push(format!("相同标签 {}", settings.managed_tag)); }
+            if same_prefix { reasons.push(format!("相同名称前缀 {}", settings.channel_name_prefix)); }
+            entry.classification = "related".into();
+            entry.reason = format!("相关但不提供统一别名：{}；仅用于诊断，不参与所有权判定", reasons.join("；"));
+            related_channels.push(entry);
+        }
+    }
+
+    manual_channels.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)));
+    managed_channels.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)));
+    orphan_channels.sort_by_key(|c| c.id);
+    related_channels.sort_by_key(|c| c.id);
+
+    let manual_enabled = manual_channels
+        .iter()
+        .filter(|c| c.status == settings.enabled_status)
+        .count();
+    let managed_enabled = managed_channels
+        .iter()
+        .filter(|c| c.status == settings.enabled_status)
+        .count();
+    let highest_manual_priority = manual_channels
+        .iter()
+        .filter(|c| c.status == settings.enabled_status)
+        .map(|c| c.priority)
+        .max();
+    let highest_managed_priority = managed_channels
+        .iter()
+        .filter(|c| c.status == settings.enabled_status)
+        .map(|c| c.priority)
+        .max();
+    let route_mode = match (highest_manual_priority, highest_managed_priority) {
+        (Some(m), Some(a)) if m > a => "manual_first",
+        (Some(m), Some(a)) if a > m => "managed_first",
+        (Some(_), Some(_)) => "mixed_same_priority",
+        (Some(_), None) => "manual_only",
+        (None, Some(_)) => "managed_only",
+        (None, None) => "no_enabled_channels",
+    }
+    .to_string();
+    let message = match route_mode.as_str() {
+        "manual_first" => "当前最高优先级来自手动渠道；AOM 自动池作为较低优先级补充/备用",
+        "managed_first" => "当前最高优先级来自 AOM 自动池；手动渠道仍保留并可作为较低优先级补充/备用",
+        "mixed_same_priority" => "手动池与 AOM 自动池存在相同最高优先级；New API 将在同优先级渠道中结合 weight 进行分配",
+        "manual_only" => "当前仅手动渠道池可用；AOM 自动池尚未初始化或未启用",
+        "managed_only" => "当前仅 AOM 自动池可用；未检测到启用的同别名手动渠道",
+        _ => "当前没有检测到启用的同别名渠道",
+    }
+    .to_string();
+
+    RoutingPoolStatus {
+        available: true,
+        alias_model: settings.alias_model.clone(),
+        total_channels,
+        manual_enabled,
+        managed_enabled,
+        manual_channels,
+        managed_channels,
+        orphan_channels,
+        related_channels,
+        highest_manual_priority,
+        highest_managed_priority,
+        route_mode,
+        message,
+        error: None,
+    }
+}
+
 fn mapping_string(alias: &str, actual: &str) -> String {
     let mut map = std::collections::HashMap::new();
     map.insert(alias, actual);
@@ -596,4 +661,52 @@ fn unwrap_rows(v: &Value) -> Vec<Value> {
         }
     }
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_alias_channel_is_allowed_and_read_only() {
+        let settings = AppSettings::default();
+        let channels = vec![json!({
+            "id": 49,
+            "name": "My Manual Tunnel",
+            "status": settings.enabled_status,
+            "priority": 20000,
+            "weight": 100,
+            "group": "default",
+            "tag": "manual",
+            "remark": "user managed",
+            "models": settings.alias_model.clone(),
+            "model_mapping": "{}",
+        })];
+
+        let report = classify_routing_pool(&settings, &[], channels, 1);
+        assert_eq!(report.manual_channels.len(), 1);
+        assert!(report.orphan_channels.is_empty());
+        assert_eq!(report.route_mode, "manual_only");
+    }
+
+    #[test]
+    fn unregistered_explicit_aom_identity_is_orphaned() {
+        let settings = AppSettings::default();
+        let channels = vec![json!({
+            "id": 88,
+            "name": format!("{} R1", settings.channel_name_prefix),
+            "status": settings.enabled_status,
+            "priority": settings.priority_base,
+            "weight": settings.channel_weight,
+            "group": settings.managed_group.clone(),
+            "tag": settings.managed_tag.clone(),
+            "remark": format!("{};rank=1", OWNER_ID),
+            "models": settings.alias_model.clone(),
+            "model_mapping": "{}",
+        })];
+
+        let report = classify_routing_pool(&settings, &[], channels, 1);
+        assert!(report.manual_channels.is_empty());
+        assert_eq!(report.orphan_channels.len(), 1);
+    }
 }
