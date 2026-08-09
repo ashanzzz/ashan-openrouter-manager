@@ -8,7 +8,7 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 2. Keeps only zero-price text models that meet the configured context limit.
 3. Joins Artificial Analysis intelligence/coding/agentic benchmark data.
 4. Ranks candidates by capability, then performs multi-round OpenRouter health checks (default: 3 attempts, 60-second interval).
-5. Health never demotes the strongest qualified model: default threshold is 30%, so 1/3 success remains eligible for R1; R2/R3 prioritize healthier qualified fallbacks.
+5. Health is admission-only: default threshold is 30%, so 1/3 success remains eligible; every qualified model keeps its original capability rank and R1/R2/R3 are simply the top three qualified ranks.
 6. Requires three qualified models before changing production state.
 7. Maintains exactly three registered New API channels that all expose `ashan-ai-model`.
 8. Updates only those exact channel IDs. Manual New API channels may expose the same alias and remain strictly read-only.
@@ -99,9 +99,9 @@ To use another host port without changing the container port:
 HOST_PORT=18080 bash scripts/install-unraid-template.sh
 ```
 
-## Quality-first model health policy
+## Health-gate model selection policy
 
-AOM v3.0.7 is designed for a resilient three-channel pool rather than for choosing only the most stable model. The selection policy is:
+AOM v3.0.8 treats model health as a gate rather than a ranking signal. The selection policy is:
 
 ```text
 Capability ranking (Intelligence -> Coding -> Agentic)
@@ -113,12 +113,12 @@ Multi-round health gate (default 3 checks, 60 s apart)
         `-- success rate >= 30% -> keep original capability rank
         |
         v
-R1 = strongest qualified model
-R2 = healthiest remaining qualified fallback (capability rank breaks ties)
-R3 = next healthiest remaining qualified fallback
+R1 = qualified capability rank #1
+R2 = qualified capability rank #2
+R3 = qualified capability rank #3
 ```
 
-Health success rate does **not** demote R1. A 1/3 model can remain R1 if it is the strongest candidate. R2/R3 deliberately prefer healthier remaining qualified models, while manual channels provide additional fallback capacity. Every manual scan, manual synchronization and scheduled synchronization uses the same health engine.
+Health success rate is **not a ranking input for any slot**. Once a model reaches the configured threshold, 33.3%, 66.7% and 100% are equivalent for R1/R2/R3 ordering. The original capability/benchmark rank alone determines the three managed slots; New API and the manual pool provide routing/failover resilience. Every manual scan, manual synchronization and scheduled synchronization uses the same health engine.
 
 Model health attempts are stored in SQLite (`model_health_checks`) and the latest summary is stored in `model_health_summary`. The Models page exposes the latest success ratio, per-attempt result, latency and last checked time. Existing databases upgrade in place.
 
@@ -161,7 +161,7 @@ AOM keeps `auto_ban` as a boolean business setting internally, but the current N
 
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.7 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.8 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -249,14 +249,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.7**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.8**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.7 add quality-first multi-round model health"
-git tag -a v3.0.7 -m "Release v3.0.7"
+git commit -m "release: v3.0.8 make health admission-only for Top3"
+git tag -a v3.0.8 -m "Release v3.0.8"
 git push origin main --tags
 ```
 

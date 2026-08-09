@@ -97,3 +97,14 @@ The first live New API sync must still be tested against the exact New API build
 - Default 1/3 success = 33.3%, which passes the 30% threshold; 0/3 fails.
 - Manual scan, manual sync and scheduled sync call the same health engine.
 - The sandbox still has no Rust toolchain/Docker daemon; GitHub Actions remains authoritative for `cargo test` and image build.
+
+
+## v3.0.8 health-gate-only Top3 selection
+
+- Every candidate still receives at least 3 real OpenRouter checks with at least 60 seconds between rounds.
+- Default qualification threshold remains 30%; 1/3 success (33.3%) qualifies.
+- Health rate is used only as an admission gate.
+- After qualification, health rate is not used for R1, R2 or R3 ordering.
+- Qualified candidates preserve the original capability/benchmark rank; the first three become R1/R2/R3.
+- Regression test covers a case where capability rank #2 has 33.3% health while lower-ranked models have 100%/66.7%; rank #2 must remain R2.
+- No SQLite schema or AppData reset is required from v3.0.7.

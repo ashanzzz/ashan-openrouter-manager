@@ -159,27 +159,18 @@ pub async fn health_check(
     Ok(candidates)
 }
 
-pub fn select_primary_and_fallbacks(tested: &[RankedModel]) -> Vec<RankedModel> {
+pub fn select_qualified_top3(tested: &[RankedModel]) -> Vec<RankedModel> {
     let mut qualified: Vec<RankedModel> = tested
         .iter()
         .filter(|m| m.usable == Some(true))
         .cloned()
         .collect();
+
+    // Health is a binary admission gate only. Once a model reaches the configured
+    // minimum success rate, R1/R2/R3 are selected strictly by the original
+    // capability/benchmark rank. 33.3%, 66.7% and 100% are equal for ranking.
     qualified.sort_by_key(|m| m.rank);
-    if qualified.is_empty() { return vec![]; }
-
-    // R1 is always the strongest qualified model. Backups prioritize health, then capability.
-    let primary = qualified.remove(0);
-    qualified.sort_by(|a, b| {
-        b.health_success_rate
-            .partial_cmp(&a.health_success_rate)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.rank.cmp(&b.rank))
-    });
-
-    let mut selected = vec![primary];
-    selected.extend(qualified.into_iter().take(2));
-    selected
+    qualified.into_iter().take(3).collect()
 }
 
 #[cfg(test)]
@@ -213,11 +204,20 @@ mod tests {
     }
 
     #[test]
-    fn strongest_model_stays_primary_but_backups_prefer_health() {
+    fn health_does_not_reorder_qualified_models() {
         let tested = vec![sample(1, 1.0 / 3.0), sample(2, 1.0 / 3.0), sample(3, 1.0), sample(4, 2.0 / 3.0)];
-        let selected = select_primary_and_fallbacks(&tested);
+        let selected = select_qualified_top3(&tested);
         assert_eq!(selected[0].rank, 1);
-        assert_eq!(selected[1].rank, 3);
-        assert_eq!(selected[2].rank, 4);
+        assert_eq!(selected[1].rank, 2);
+        assert_eq!(selected[2].rank, 3);
+    }
+
+    #[test]
+    fn unavailable_higher_rank_is_skipped_without_health_resorting() {
+        let mut first = sample(1, 0.0);
+        first.usable = Some(false);
+        let tested = vec![first, sample(2, 1.0 / 3.0), sample(3, 1.0), sample(4, 2.0 / 3.0)];
+        let selected = select_qualified_top3(&tested);
+        assert_eq!(selected.iter().map(|m| m.rank).collect::<Vec<_>>(), vec![2, 3, 4]);
     }
 }

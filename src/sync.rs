@@ -193,7 +193,7 @@ pub async fn scan(state: &AppState) -> Result<ScanResult, AppError> {
         settings.preflight_concurrency,
         None,
     ).await?;
-    let selected = tester::select_primary_and_fallbacks(&tested);
+    let selected = tester::select_qualified_top3(&tested);
     let warning = if selected.len() < 3 {
         Some(format!(
             "只找到 {} 个达到健康准入线的模型；不会修改生产渠道",
@@ -500,7 +500,7 @@ async fn scan_with_logger(
         ).await;
     }
 
-    let selected = tester::select_primary_and_fallbacks(&tested);
+    let selected = tester::select_qualified_top3(&tested);
     let warning = if selected.len() < 3 {
         Some(format!("只找到 {} 个可用模型；不会修改生产渠道", selected.len()))
     } else {
@@ -513,7 +513,7 @@ async fn scan_with_logger(
                 "success",
                 "preflight",
                 "selection",
-                "已选出 3 个模型：R1 能力最强，R2/R3 优先选择更健康的合格模型作为兜底",
+                "已选出 3 个模型：健康率仅作准入门槛，R1/R2/R3 严格按原能力排名取前三名",
                 Some(
                     selected
                         .iter()

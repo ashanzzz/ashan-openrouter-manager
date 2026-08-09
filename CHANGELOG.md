@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.0.8
+
+- Changed model health from a partial ranking signal to a pure admission gate.
+- R1, R2 and R3 now use exactly the same rule: a model that meets the configured health threshold is qualified, and qualified models are ordered strictly by their original capability/benchmark rank.
+- Removed health-priority sorting from R2/R3; 33.3%, 66.7% and 100% health are equivalent for ranking once qualified.
+- Kept the existing 3-round minimum, 60-second minimum interval, 30% default threshold, SQLite health history, last-check timestamps and real-time health logs.
+- Updated UI copy so health is shown as diagnostic/qualification data rather than a backup ranking signal.
+- Added regression coverage ensuring a higher-capability 33.3%-healthy model is not displaced by a lower-capability 100%-healthy model.
+- No AppData/database reset is required when upgrading from v3.0.7.
+
 ## v3.0.7
 
 - Replaced one-shot model preflight with a persistent multi-round Model Health Engine.

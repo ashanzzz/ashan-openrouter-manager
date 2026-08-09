@@ -465,7 +465,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.7</span>
+            <span>Manager v3.0.8</span>
           </div>
         </div>
         <nav>
@@ -726,7 +726,7 @@ function ModelsPage({ scan, settings }: { scan: Scan | null; settings: Settings 
         <div>
           <p className="eyebrow">MODEL HEALTH ENGINE</p>
           <h2>模型健康检测</h2>
-          <p>R1 保留能力最强且过线的模型；R2 / R3 从其余合格模型中优先选择健康度更高的作为故障转移兜底。</p>
+          <p>R1 / R2 / R3 使用完全相同的健康准入规则：达到门槛后，健康率不再参与排序，严格按原能力排名取前三名。</p>
         </div>
         <div className="health-rule-grid">
           <div><span>每轮检测</span><strong>{Math.max(3, settings.health_check_attempts)} 次</strong></div>
@@ -742,7 +742,7 @@ function ModelsPage({ scan, settings }: { scan: Scan | null; settings: Settings 
             const model = selected[index]
             return (
               <div className="card health-role-card" key={index}>
-                <div className="role-label">{index === 0 ? 'R1 · 主力最强模型' : `R${index + 1} · 高健康兜底`}</div>
+                <div className="role-label">{index === 0 ? 'R1 · 能力第 1' : `R${index + 1} · 能力第 ${index + 1}`}</div>
                 <h3>{model?.name || '等待检测'}</h3>
                 <code>{model?.id || '—'}</code>
                 {model && (
@@ -1074,7 +1074,7 @@ function SettingsPage({
           <div>
             <p className="eyebrow">SELECTION</p>
             <h2>模型规则</h2>
-            <p>R1 由能力排名决定；R2/R3 在其余合格模型中优先选择更健康的兜底。</p>
+            <p>健康率只负责准入；达到门槛的模型一律按能力排名决定 R1/R2/R3。</p>
           </div>
           {rulesDirty ? <Badge tone="warn">有未保存更改</Badge> : <Badge>无更改</Badge>}
         </div>
@@ -1125,7 +1125,7 @@ function SettingsPage({
             </label>
             <div className="health-policy-note">
               <strong>选择策略</strong>
-              <span>R1 永远取能力排名最高且达到门槛的模型；R2/R3 在其余合格模型中先看健康率，再看能力排名。这样主力不因偶发抖动被放弃，同时备用更可靠。</span>
+              <span>R1、R2、R3 使用同一规则：健康率达到门槛即视为合格，之后完全忽略健康率差异，严格按原能力排名取前三名。健康度只用于淘汰明显不可用模型和页面诊断。</span>
             </div>
           </div>
         </div>

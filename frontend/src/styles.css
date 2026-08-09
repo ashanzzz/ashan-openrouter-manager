@@ -388,7 +388,7 @@ details summary { cursor: pointer; font-weight: 720; }
 @media (max-width: 900px) { .route-summary-grid { grid-template-columns: 1fr 1fr; } .route-pools { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .route-summary-grid { grid-template-columns: 1fr; } }
 
-/* v3.0.7 quality-first multi-round model health */
+/* v3.0.8 health-gate-only model selection */
 .health-cell { display: grid; gap: 4px; min-width: 92px; }
 .health-cell small { color: #7c8799; font-size: 10px; }
 .health-attempts { display: flex; gap: 5px; align-items: center; min-width: 76px; }
