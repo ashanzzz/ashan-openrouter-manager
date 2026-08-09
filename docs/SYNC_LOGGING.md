@@ -1,6 +1,6 @@
 # Synchronization logging
 
-v3.0.6 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
+v3.0.8 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
 
 ## Stages
 
@@ -43,3 +43,8 @@ Synchronization logs never intentionally contain OpenRouter API keys, New API ad
 ## API schema compatibility diagnostics
 
 New API Go JSON decode failures such as `cannot unmarshal bool into Go struct field ... of type int` are categorized as `newapi_schema` and displayed as **New API API Schema**. These indicate an API payload/schema mismatch, not an administrator permission problem.
+
+
+## Model health stages
+
+The `preflight` stage is now the multi-round Model Health Engine. Logs record round start/completion, each real model request, latency/error, the configured inter-round wait, final success rate, qualification result, and the R1/R2/R3 selection with health percentages. Health percentages are diagnostic only after qualification and never reorder qualified models.

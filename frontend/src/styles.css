@@ -387,3 +387,42 @@ details summary { cursor: pointer; font-weight: 720; }
 .route-empty strong { color: #59667d; font-size: 11px; }
 @media (max-width: 900px) { .route-summary-grid { grid-template-columns: 1fr 1fr; } .route-pools { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .route-summary-grid { grid-template-columns: 1fr; } }
+
+/* v3.0.8 health-gate-only model selection */
+.health-cell { display: grid; gap: 4px; min-width: 92px; }
+.health-cell small { color: #7c8799; font-size: 10px; }
+.health-attempts { display: flex; gap: 5px; align-items: center; min-width: 76px; }
+.health-attempts > span:not(.muted) {
+  width: 23px; height: 23px; border-radius: 7px; display: inline-grid; place-items: center;
+  font-size: 11px; font-weight: 800; border: 1px solid transparent;
+}
+.health-attempts .success { color: #16845c; background: #eaf9f2; border-color: #bcebd8; }
+.health-attempts .failed { color: #b44740; background: #fff0ef; border-color: #ffd0cc; }
+.last-check-cell { display: grid; gap: 3px; min-width: 150px; }
+.last-check-cell > span { font-size: 11px; color: #465268; }
+.last-check-cell small { font-size: 9px; color: #929caf; }
+.health-overview { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.health-overview > div:first-child { max-width: 620px; }
+.health-rule-grid { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 9px; min-width: 360px; }
+.health-rule-grid > div { background: #f7f9fc; border: 1px solid #e5eaf2; border-radius: 12px; padding: 10px 12px; display: grid; gap: 3px; }
+.health-rule-grid span { color: #8792a5; font-size: 9px; }
+.health-rule-grid strong { color: #2f3b52; font-size: 12px; }
+.health-role-grid { margin-bottom: 18px; }
+.health-role-card { position: relative; overflow: hidden; }
+.health-role-card:first-child { border-color: #cbd8ff; box-shadow: 0 10px 28px rgba(72, 101, 196, .08); }
+.role-label { font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #71809a; font-weight: 750; margin-bottom: 10px; }
+.health-role-card h3 { margin: 0 0 4px; }
+.health-role-card code { display: block; overflow-wrap: anywhere; color: #8792a5; font-size: 10px; }
+.role-health { margin-top: 14px; display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.role-health > span { font-size: 10px; color: #6e7a8e; }
+.health-settings-block { margin: 17px 0; padding: 15px; border: 1px solid #e0e7f0; border-radius: 14px; background: #fafcff; }
+.compact-settings-head { margin-bottom: 13px; }
+.compact-settings-head h3 { margin: 0 0 3px; font-size: 14px; }
+.health-policy-note { border: 1px solid #dce5f3; background: white; border-radius: 10px; padding: 10px 11px; display: grid; gap: 4px; }
+.health-policy-note strong { font-size: 11px; color: #34435c; }
+.health-policy-note span { font-size: 9px; color: #7d899c; line-height: 1.55; }
+
+@media (max-width: 900px) {
+  .health-overview { flex-direction: column; }
+  .health-rule-grid { min-width: 0; width: 100%; }
+}

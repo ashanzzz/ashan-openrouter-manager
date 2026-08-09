@@ -14,6 +14,9 @@ export interface Settings {
   min_context_length: number
   candidate_pool: number
   preflight_concurrency: number
+  health_check_attempts: number
+  health_check_interval_seconds: number
+  health_min_success_rate: number
   require_benchmark: boolean
   require_free_suffix: boolean
   include_models: string[]
@@ -38,6 +41,16 @@ export interface Settings {
   e2e_test_enabled: boolean
 }
 
+export interface ModelHealthAttempt {
+  batch_id: string
+  model_id: string
+  attempt: number
+  checked_at: string
+  success: boolean
+  latency_ms: number
+  error?: string | null
+}
+
 export interface RankedModel {
   rank: number
   id: string
@@ -49,6 +62,16 @@ export interface RankedModel {
   score: number
   usable?: boolean | null
   test_error?: string | null
+  health_attempts: number
+  health_successes: number
+  health_success_rate: number
+  last_checked_at?: string | null
+  last_success_at?: string | null
+  last_failure_at?: string | null
+  average_latency_ms?: number | null
+  health_status: string
+  health_batch_id?: string | null
+  health_checks: ModelHealthAttempt[]
 }
 
 export interface Scan {

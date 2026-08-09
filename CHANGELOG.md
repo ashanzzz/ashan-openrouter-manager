@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.0.8
+
+- Changed model health from a partial ranking signal to a pure admission gate.
+- R1, R2 and R3 now use exactly the same rule: a model that meets the configured health threshold is qualified, and qualified models are ordered strictly by their original capability/benchmark rank.
+- Removed health-priority sorting from R2/R3; 33.3%, 66.7% and 100% health are equivalent for ranking once qualified.
+- Kept the existing 3-round minimum, 60-second minimum interval, 30% default threshold, SQLite health history, last-check timestamps and real-time health logs.
+- Updated UI copy so health is shown as diagnostic/qualification data rather than a backup ranking signal.
+- Added regression coverage ensuring a higher-capability 33.3%-healthy model is not displaced by a lower-capability 100%-healthy model.
+- No AppData/database reset is required when upgrading from v3.0.7.
+
+## v3.0.7
+
+- Replaced one-shot model preflight with a persistent multi-round Model Health Engine.
+- Default health policy: 3 attempts per candidate, 60 seconds between rounds, minimum success rate 30%.
+- R1 is always the strongest qualified candidate, even at 1/3 health; R2/R3 prioritize healthier remaining qualified candidates and use capability rank as the tie-breaker.
+- Manual scan, manual sync and scheduled sync now share the exact same multi-round health engine.
+- Added SQLite `model_health_checks` and `model_health_summary` tables with per-attempt timestamps, latency, success/failure and last error.
+- Models UI now shows health success rate, recent attempt results, last checked time and R1/R2/R3 roles.
+- Added configurable health attempts, interval and minimum success rate; attempts are validated to be at least 3.
+- Sync logs now show each health round, the wait between rounds, every model attempt and the final qualification decision.
+- Existing v3.0.6 AppData upgrades in place; no reset is required.
+
 ## v3.0.6
 
 - Fixed New API channel creation against the current `Channel.auto_ban` schema: AOM now serializes the internal boolean as integer `1`/`0` at the New API adapter boundary.

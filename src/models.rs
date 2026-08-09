@@ -13,6 +13,12 @@ pub struct AppSettings {
     pub min_context_length: i64,
     pub candidate_pool: usize,
     pub preflight_concurrency: usize,
+    #[serde(default = "default_health_check_attempts")]
+    pub health_check_attempts: usize,
+    #[serde(default = "default_health_check_interval_seconds")]
+    pub health_check_interval_seconds: u64,
+    #[serde(default = "default_health_min_success_rate")]
+    pub health_min_success_rate: f64,
     pub require_benchmark: bool,
     pub require_free_suffix: bool,
     pub include_models: Vec<String>,
@@ -54,6 +60,9 @@ impl Default for AppSettings {
             min_context_length: 32768,
             candidate_pool: 12,
             preflight_concurrency: 3,
+            health_check_attempts: default_health_check_attempts(),
+            health_check_interval_seconds: default_health_check_interval_seconds(),
+            health_min_success_rate: default_health_min_success_rate(),
             require_benchmark: true,
             require_free_suffix: false,
             include_models: vec![],
@@ -94,6 +103,9 @@ pub enum ScheduleMode {
 
 fn default_daily_sync_time() -> String { "00:00".into() }
 fn default_schedule_timezone() -> String { "Asia/Shanghai".into() }
+fn default_health_check_attempts() -> usize { 3 }
+fn default_health_check_interval_seconds() -> u64 { 60 }
+fn default_health_min_success_rate() -> f64 { 0.30 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterModel {
@@ -128,6 +140,17 @@ pub struct BenchmarkItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelHealthAttempt {
+    pub batch_id: String,
+    pub model_id: String,
+    pub attempt: usize,
+    pub checked_at: String,
+    pub success: bool,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RankedModel {
     pub rank: usize,
     pub id: String,
@@ -139,6 +162,16 @@ pub struct RankedModel {
     pub score: f64,
     pub usable: Option<bool>,
     pub test_error: Option<String>,
+    #[serde(default)] pub health_attempts: usize,
+    #[serde(default)] pub health_successes: usize,
+    #[serde(default)] pub health_success_rate: f64,
+    #[serde(default)] pub last_checked_at: Option<String>,
+    #[serde(default)] pub last_success_at: Option<String>,
+    #[serde(default)] pub last_failure_at: Option<String>,
+    #[serde(default)] pub average_latency_ms: Option<u64>,
+    #[serde(default)] pub health_status: String,
+    #[serde(default)] pub health_batch_id: Option<String>,
+    #[serde(default)] pub health_checks: Vec<ModelHealthAttempt>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
