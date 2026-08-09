@@ -3,6 +3,8 @@ import { api } from './api'
 import type {
   ConnectionCheck,
   RankedModel,
+  RoutingChannel,
+  RoutingPoolStatus,
   Run,
   Scan,
   Settings,
@@ -129,6 +131,7 @@ const stageLabels: Record<string, string> = {
   preflight: '真实调用测试',
   newapi_connection: 'New API 连接/权限',
   newapi_conflicts: '渠道冲突检查',
+  newapi_routing: '路由池检查',
   newapi_identity: '渠道身份校验',
   newapi_create: '渠道初始化',
   newapi_update: '渠道更新',
@@ -147,6 +150,10 @@ const categoryLabels: Record<string, string> = {
   safety_conflict: '安全冲突',
   safety: '安全校验',
   legacy_channel: '历史渠道',
+  manual_channel: '手动渠道',
+  related_channel: '相关渠道',
+  manager_orphan: '孤儿 AOM',
+  routing: '路由池',
   network_or_internal: '网络/内部',
   selection: '模型选择',
   validation: '校验',
@@ -244,6 +251,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [scan, setScan] = useState<Scan | null>(null)
   const [runs, setRuns] = useState<Run[]>([])
+  const [routing, setRouting] = useState<RoutingPoolStatus | null>(null)
   const [busy, setBusy] = useState<BusyAction>('')
   const [toast, setToast] = useState<Toast | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -256,24 +264,32 @@ export default function App() {
   })
 
   const refreshRuntime = async () => {
-    const [nextStatus, models, history] = await Promise.all([api.status(), api.models(), api.history()])
+    const [nextStatus, models, history, nextRouting] = await Promise.all([
+      api.status(),
+      api.models(),
+      api.history(),
+      api.routing().catch(() => null),
+    ])
     setStatus(nextStatus)
     setScan(models.scan || null)
     setRuns(history.runs || [])
+    setRouting(nextRouting)
   }
 
   const initialLoad = async () => {
-    const [nextStatus, nextSettings, models, history] = await Promise.all([
+    const [nextStatus, nextSettings, models, history, nextRouting] = await Promise.all([
       api.status(),
       api.settings(),
       api.models(),
       api.history(),
+      api.routing().catch(() => null),
     ])
     setStatus(nextStatus)
     setSavedSettings(nextSettings)
     setSettings(nextSettings)
     setScan(models.scan || null)
     setRuns(history.runs || [])
+    setRouting(nextRouting)
     if (nextStatus.active_sync_run_id) {
       setActiveSyncId(nextStatus.active_sync_run_id)
       setBusy('sync')
@@ -424,7 +440,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.4</span>
+            <span>Manager v3.0.5</span>
           </div>
         </div>
         <nav>
@@ -480,7 +496,7 @@ export default function App() {
 
         <section className="content">
           {page === 'overview' && (
-            <OverviewPage status={status} settings={settings} scan={scan} />
+            <OverviewPage status={status} settings={settings} scan={scan} routing={routing} />
           )}
           {page === 'models' && <ModelsPage scan={scan} />}
           {page === 'history' && <HistoryPage runs={runs} />}
@@ -510,7 +526,7 @@ export default function App() {
   )
 }
 
-function OverviewPage({ status, settings, scan }: { status: Status; settings: Settings; scan: Scan | null }) {
+function OverviewPage({ status, settings, scan, routing }: { status: Status; settings: Settings; scan: Scan | null; routing: RoutingPoolStatus | null }) {
   const openrouterConfigured = status.secrets.openrouter_api_key
   const newapiConfigured = status.secrets.newapi_admin_token && !!settings.newapi_base_url.trim()
 
@@ -585,7 +601,95 @@ function OverviewPage({ status, settings, scan }: { status: Status; settings: Se
           </p>
         </div>
       </div>
+      <RoutingPoolCard routing={routing} enabledStatus={settings.enabled_status} />
     </>
+  )
+}
+
+function routeModeLabel(mode: string) {
+  switch (mode) {
+    case 'manual_first': return '手动池优先'
+    case 'managed_first': return 'AOM 自动池优先'
+    case 'mixed_same_priority': return '同优先级混合'
+    case 'manual_only': return '仅手动池'
+    case 'managed_only': return '仅 AOM 自动池'
+    case 'no_enabled_channels': return '暂无启用渠道'
+    default: return '尚未读取'
+  }
+}
+
+function RoutingChannelRow({ channel, enabledStatus, managed }: { channel: RoutingChannel; enabledStatus: number; managed: boolean }) {
+  const enabled = channel.status === enabledStatus
+  return (
+    <div className="route-channel-row">
+      <div className="route-channel-main">
+        <span className={`route-owner-dot ${managed ? 'managed' : 'manual'}`} />
+        <div>
+          <strong>{channel.name || `Channel ${channel.id}`}</strong>
+          <span>ID {channel.id} · priority {channel.priority} · weight {channel.weight}</span>
+        </div>
+      </div>
+      <div className="route-channel-meta">
+        <Badge tone={enabled ? 'ok' : 'muted'}>{enabled ? '启用' : `状态 ${channel.status}`}</Badge>
+        <code>{channel.mapping_target || channel.models.join(', ') || '未设置映射'}</code>
+      </div>
+    </div>
+  )
+}
+
+function RoutingPoolCard({ routing, enabledStatus }: { routing: RoutingPoolStatus | null; enabledStatus: number }) {
+  return (
+    <div className="card routing-card">
+      <div className="section-head routing-head">
+        <div>
+          <p className="eyebrow">NEW API ROUTING POOL</p>
+          <h3>手动渠道 + AOM 自动 Top3</h3>
+          <p>相同统一别名允许共存。AOM 只修改自己登记的精确 Channel ID；手动渠道永久只读。</p>
+        </div>
+        <Badge tone={routing?.orphan_channels.length ? 'bad' : routing?.available ? 'ok' : 'muted'}>
+          {routing?.orphan_channels.length ? `${routing.orphan_channels.length} 个孤儿 AOM` : routing?.available ? routeModeLabel(routing.route_mode) : '未读取'}
+        </Badge>
+      </div>
+
+      {!routing || !routing.available ? (
+        <div className="route-empty">
+          <strong>暂时无法读取路由池</strong>
+          <span>{routing?.error || routing?.message || '保存并测试 New API 后将显示手动池和自动池。'}</span>
+        </div>
+      ) : (
+        <>
+          <div className="route-summary-grid">
+            <div><span>手动同别名</span><strong>{routing.manual_channels.length}</strong><small>启用 {routing.manual_enabled}</small></div>
+            <div><span>AOM 受管</span><strong>{routing.managed_channels.length}</strong><small>启用 {routing.managed_enabled}</small></div>
+            <div><span>手动最高优先级</span><strong>{routing.highest_manual_priority ?? '—'}</strong><small>AOM 不会修改</small></div>
+            <div><span>AOM 最高优先级</span><strong>{routing.highest_managed_priority ?? '—'}</strong><small>由 Manager 设置控制</small></div>
+          </div>
+          <div className="route-mode-note">{routing.message}</div>
+          {routing.orphan_channels.length > 0 && (
+            <div className="route-orphan-warning">
+              <strong>发现未登记的 AOM 身份渠道，自动同步会安全停止。</strong>
+              <span>{routing.orphan_channels.map((c) => `ID ${c.id} ${c.name}`).join(' · ')}</span>
+            </div>
+          )}
+          <div className="route-pools">
+            <div className="route-pool">
+              <div className="route-pool-title"><span className="route-owner-dot manual" /><div><strong>手动渠道池</strong><span>只读 · 不删除 · 不改 priority/weight</span></div></div>
+              <div className="route-channel-list">
+                {routing.manual_channels.map((channel) => <RoutingChannelRow key={`manual-${channel.id}`} channel={channel} enabledStatus={enabledStatus} managed={false} />)}
+                {!routing.manual_channels.length && <div className="route-mini-empty">没有检测到同别名手动渠道</div>}
+              </div>
+            </div>
+            <div className="route-pool">
+              <div className="route-pool-title"><span className="route-owner-dot managed" /><div><strong>AOM 自动池</strong><span>只管理 SQLite 登记的 3 个精确 ID</span></div></div>
+              <div className="route-channel-list">
+                {routing.managed_channels.map((channel) => <RoutingChannelRow key={`managed-${channel.id}`} channel={channel} enabledStatus={enabledStatus} managed />)}
+                {!routing.managed_channels.length && <div className="route-mini-empty">尚未初始化 AOM Top3</div>}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 

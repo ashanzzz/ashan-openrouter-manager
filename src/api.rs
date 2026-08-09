@@ -12,7 +12,7 @@ use crate::{
     error::AppError,
     models::{
         AppSettings, ConnectionCheck, ConnectionSaveResponse, ConnectionTestResult,
-        ConnectionUpdate, SecretStatus, SecretUpdate, StatusResponse, SyncRequest, SyncStartResponse, SyncProgress,
+        ConnectionUpdate, RoutingPoolStatus, SecretStatus, SecretUpdate, StatusResponse, SyncRequest, SyncStartResponse, SyncProgress,
     },
     newapi::NewApiClient,
     openrouter::OpenRouterClient,
@@ -24,6 +24,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(status))
         .route("/api/models", get(models))
         .route("/api/history", get(history))
+        .route("/api/routing", get(routing_pool))
         .route("/api/settings", get(get_settings).put(save_settings))
         .route("/api/connections", put(save_connections))
         .route("/api/secrets", put(save_secrets))
@@ -77,6 +78,48 @@ async fn models(State(state): State<AppState>) -> Result<Json<Value>, AppError> 
 
 async fn history(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     Ok(Json(json!({"runs": state.db.list_runs(100).await?})))
+}
+
+async fn routing_pool(State(state): State<AppState>) -> Result<Json<RoutingPoolStatus>, AppError> {
+    let settings = state.db.get_settings().await?;
+    if settings.newapi_base_url.trim().is_empty() {
+        return Ok(Json(RoutingPoolStatus::unavailable(
+            settings.alias_model,
+            "请先保存 New API 地址",
+        )));
+    }
+    if !state.db.has_secret("newapi_admin_token").await? {
+        return Ok(Json(RoutingPoolStatus::unavailable(
+            settings.alias_model,
+            "请先保存 New API 管理员 Token",
+        )));
+    }
+
+    let token = match decrypt_secret(&state, "newapi_admin_token").await {
+        Ok(v) => v,
+        Err(error) => {
+            let mut status = RoutingPoolStatus::unavailable(settings.alias_model, "无法读取 New API 管理员 Token");
+            status.error = Some(error.to_string());
+            return Ok(Json(status));
+        }
+    };
+    let managed = state.db.list_managed_channels().await?;
+    let client = match NewApiClient::new(state.http.clone(), &settings, token) {
+        Ok(v) => v,
+        Err(error) => {
+            let mut status = RoutingPoolStatus::unavailable(settings.alias_model, "New API 连接配置无效");
+            status.error = Some(error.to_string());
+            return Ok(Json(status));
+        }
+    };
+    match client.inspect_routing_pool(&settings, &managed).await {
+        Ok(status) => Ok(Json(status)),
+        Err(error) => {
+            let mut status = RoutingPoolStatus::unavailable(settings.alias_model, "无法读取 New API 路由池");
+            status.error = Some(error.to_string());
+            Ok(Json(status))
+        }
+    }
 }
 
 async fn get_settings(State(state): State<AppState>) -> Result<Json<AppSettings>, AppError> {

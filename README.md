@@ -10,7 +10,7 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 4. Ranks candidates and performs real OpenRouter chat-completion preflight tests.
 5. Requires three usable models before changing production state.
 6. Maintains exactly three registered New API channels that all expose `ashan-ai-model`.
-7. Updates only those exact channel IDs. Unknown channels are read-only and conflicts stop the sync.
+7. Updates only those exact channel IDs. Manual New API channels may expose the same alias and remain strictly read-only.
 8. Runs automatically on an internal scheduler, with manual scan/sync controls in the web UI.
 
 
@@ -24,7 +24,7 @@ The log pipeline distinguishes:
 - OpenRouter model catalog and benchmark retrieval;
 - model filtering/ranking and each real preflight result;
 - New API connection and administrator permission failures (401/403);
-- foreign-channel warnings vs hard alias/ownership conflicts;
+- manual-channel coexistence, route priority diagnostics, and true AOM ownership conflicts;
 - exact managed-channel identity verification;
 - channel creation/update/testing;
 - E2E testing and rollback.
@@ -113,10 +113,26 @@ priorities:     10003, 10002, 10001
 
 The manager stores the exact three channel IDs in SQLite and verifies live ownership before every mutation. It does not delete foreign channels or change New API global retries, tokens, model ratios or group ratios.
 
+### Hybrid routing with manual channels
+
+`ashan-ai-model` is a public routing alias, **not an ownership marker**. You may keep any number of manually maintained New API channels that also expose `ashan-ai-model`; AOM will list them for diagnostics but never modify, delete, disable, reprioritize, reweight, or adopt them.
+
+AOM owns only the three exact Channel IDs stored in SQLite and verifies their AOM identity before every mutation. The new `GET /api/routing` endpoint and Overview routing card show both pools side-by-side:
+
+```text
+ashan-ai-model
+  |-- Manual Pool       (user-owned, read-only to AOM)
+  `-- AOM Managed Pool  ([AOM3] R1/R2/R3, exact-ID managed)
+```
+
+New API selects channels using its own priority/weight rules. AOM displays the current highest-priority relationship but never changes manual channel priority or weight.
+
+A hard block is used only when a channel claims explicit AOM identity but its ID is absent from the local managed-channel registry, because silently adopting or overwriting such an orphan would be unsafe.
+
 
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.4 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.5 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -139,7 +155,7 @@ Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive 
 | `WEBUI_PORT` | Compose only | `8080` | host-side published port; container remains `8080` |
 | `RUST_LOG` | no | `info` | tracing filter |
 
-`PORT` is intentionally **not** a user setting in v3.0.2. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
+`PORT` is intentionally **not** a user setting. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
 
 
 ## Connection settings UX
@@ -161,7 +177,8 @@ This fixes the previous state-flow bug where saving only secrets triggered a glo
 The synchronization rule is fail-closed:
 
 - fewer than three usable models: keep current channels unchanged;
-- alias/ownership conflict: stop without mutation;
+- manual channels sharing the alias are allowed and remain read-only;
+- orphaned/unregistered AOM identity: stop without mutation;
 - New API update/test failure: attempt to restore the previous mappings;
 - unchanged top three: no channel writes;
 - only exact IDs saved in `managed_channels` are mutable after initialization.
@@ -203,14 +220,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.4**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.5**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.2 fix connection settings and UX"
-git tag -a v3.0.4 -m "Release v3.0.4"
+git commit -m "release: v3.0.5 allow manual + AOM hybrid routing"
+git tag -a v3.0.5 -m "Release v3.0.5"
 git push origin main --tags
 ```
 

@@ -1,6 +1,6 @@
 # Synchronization logging
 
-v3.0.4 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
+v3.0.5 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
 
 ## Stages
 
@@ -10,7 +10,7 @@ v3.0.4 records every manual and scheduled synchronization as a `SyncRun` plus or
 - `ranking` — free-model filtering and ranking
 - `preflight` — real candidate chat-completion tests
 - `newapi_connection` — New API endpoint and administrator read permission
-- `newapi_conflicts` — foreign-channel safety inspection
+- `newapi_routing` — manual/AOM routing-pool inspection and ownership safety checks
 - `newapi_identity` — exact managed-channel ownership verification
 - `newapi_create` — first-time creation
 - `newapi_update` — production mapping update

@@ -161,6 +161,61 @@ pub struct ManagedChannel {
     pub updated_at: String,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingChannel {
+    pub id: i64,
+    pub name: String,
+    pub status: i64,
+    pub priority: i64,
+    pub weight: i64,
+    pub group: String,
+    pub tag: String,
+    pub models: Vec<String>,
+    pub mapping_target: Option<String>,
+    pub classification: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingPoolStatus {
+    pub available: bool,
+    pub alias_model: String,
+    pub total_channels: usize,
+    pub manual_channels: Vec<RoutingChannel>,
+    pub managed_channels: Vec<RoutingChannel>,
+    pub orphan_channels: Vec<RoutingChannel>,
+    pub related_channels: Vec<RoutingChannel>,
+    pub manual_enabled: usize,
+    pub managed_enabled: usize,
+    pub highest_manual_priority: Option<i64>,
+    pub highest_managed_priority: Option<i64>,
+    pub route_mode: String,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+impl RoutingPoolStatus {
+    pub fn unavailable(alias_model: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            available: false,
+            alias_model: alias_model.into(),
+            total_channels: 0,
+            manual_channels: vec![],
+            managed_channels: vec![],
+            orphan_channels: vec![],
+            related_channels: vec![],
+            manual_enabled: 0,
+            managed_enabled: 0,
+            highest_manual_priority: None,
+            highest_managed_priority: None,
+            route_mode: "unavailable".into(),
+            message: message.into(),
+            error: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncRun {
     pub id: String,
