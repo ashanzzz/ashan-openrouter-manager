@@ -23,7 +23,7 @@ WORKDIR /app
 COPY --from=backend /src/target/release/ashan-openrouter-manager /usr/local/bin/ashan-openrouter-manager
 COPY --from=frontend /src/frontend/dist /app/web
 RUN mkdir -p /data
-ENV PORT=8080 DATA_DIR=/data WEB_DIR=/app/web RUST_LOG=info
+ENV DATA_DIR=/data WEB_DIR=/app/web RUST_LOG=info
 EXPOSE 8080
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -fsS http://127.0.0.1:8080/api/status >/dev/null || exit 1

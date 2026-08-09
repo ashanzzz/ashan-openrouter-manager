@@ -31,3 +31,12 @@ docker compose up -d
 ```
 
 The first live New API sync must still be tested against the exact New API build in use, because New API is an external project whose channel contract can change between releases.
+
+## v3.0.1 deployment simplification
+
+- Removed the user-configurable container `PORT`; the internal listener is fixed at 8080.
+- Compose exposes only host-side `WEBUI_PORT`.
+- Unraid template installer exposes one port field only.
+- Removed unused QEMU and optional Docker Hub login from GHCR CI.
+- Changed workflow concurrency from commit SHA to Git ref so main/tag builds do not cancel each other.
+- Preserved the frontend `tsconfig.node.json` `noEmit` fix from current GitHub main.

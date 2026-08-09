@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
-    let port: u16 = env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8080);
+    const INTERNAL_HTTP_PORT: u16 = 8080;
     let data_dir = PathBuf::from(env::var("DATA_DIR").unwrap_or_else(|_| "./data".into()));
     let web_dir = PathBuf::from(env::var("WEB_DIR").unwrap_or_else(|_| "./frontend/dist".into()));
     let master_key = env::var("APP_MASTER_KEY")
@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     db.ensure_default_settings().await?;
 
     let http = Client::builder()
-        .user_agent("ashan-openrouter-manager/3.0.0")
+        .user_agent("ashan-openrouter-manager/3.0.1")
         .timeout(std::time::Duration::from_secs(45))
         .build()?;
 
@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         .fallback_service(static_service)
         .layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], INTERNAL_HTTP_PORT));
     info!(%addr, "Ashan OpenRouter Manager v3 listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

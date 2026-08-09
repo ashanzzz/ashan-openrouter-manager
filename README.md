@@ -16,11 +16,15 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 ## Architecture
 
 ```text
-React SPA
+Browser
    |
-REST API
+Host WebUI Port (configurable, default 8080)
+   |
+Container :8080 (fixed)
    |
 Rust + Axum
+   |-- serves React SPA
+   |-- REST API
    |-- OpenRouter client
    |-- Ranking engine
    |-- Model tester
@@ -30,7 +34,7 @@ Rust + Axum
    `-- SQLite
 ```
 
-The React build is served by the Rust process. One container runs the frontend, API, scheduler and SQLite-backed state.
+The React build and REST API are served by the same Rust process. **There is no separate frontend port and backend port.** The container always listens on internal port `8080`; only the host-side WebUI port is configurable.
 
 ## Quick start
 
@@ -41,7 +45,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open `http://YOUR_SERVER_IP:8080`.
+Open `http://YOUR_SERVER_IP:8080`. If `WEBUI_PORT` is changed, use that host port instead.
 
 Then:
 
@@ -52,6 +56,28 @@ Then:
 5. Run **Scan only** and inspect the top three.
 6. Run **Sync now**. On first sync, the service creates exactly three fixed managed channels.
 7. Enable automatic sync after the first successful live sync.
+
+## Unraid
+
+The Unraid template intentionally exposes only **one port field**: `WebUI Port`. The container-side target remains fixed at `8080`.
+
+Default persistent path:
+
+```text
+/mnt/cache/appdata/ashan-openrouter-manager
+```
+
+Install the template from an Unraid terminal after copying/cloning this project:
+
+```bash
+bash scripts/install-unraid-template.sh
+```
+
+To use another host port without changing the container port:
+
+```bash
+HOST_PORT=18080 bash scripts/install-unraid-template.sh
+```
 
 ## New API managed resources
 
@@ -68,21 +94,21 @@ priorities:     10003, 10002, 10001
 
 The manager stores the exact three channel IDs in SQLite and verifies live ownership before every mutation. It does not delete foreign channels or change New API global retries, tokens, model ratios or group ratios.
 
-## Data
+## Data and secrets
 
-Persistent state is under `/data` in the container. The default Compose file maps it to `./data`.
+Persistent state is under `/data` in the container. The default Compose file maps it to `./data`; the Unraid template maps it to `/mnt/cache/appdata/ashan-openrouter-manager`.
 
-Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive the encryption key. **Do not change it after saving secrets**, or the existing encrypted secrets can no longer be decrypted.
+Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive the encryption key. **Do not change it after saving secrets**, or existing encrypted secrets can no longer be decrypted.
 
-## Environment
+## User-facing environment
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `APP_MASTER_KEY` | yes | none | encryption root key |
-| `PORT` | no | `8080` | HTTP port |
-| `DATA_DIR` | no | `/data` | SQLite location |
-| `WEB_DIR` | no | `/app/web` | compiled React assets |
+| `WEBUI_PORT` | Compose only | `8080` | host-side published port; container remains `8080` |
 | `RUST_LOG` | no | `info` | tracing filter |
+
+`PORT` is intentionally **not** a user setting in v3.0.1. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
 
 ## Safety model
 
@@ -110,13 +136,13 @@ Backend:
 cargo run
 ```
 
-The frontend dev server proxies `/api` to `http://127.0.0.1:8080`.
+The frontend development server proxies `/api` to `http://127.0.0.1:8080`. Production still uses one Rust HTTP listener.
 
 ## Docker & CI/CD Auto-Build
 
-This repository uses GitHub Actions for automated Docker image building and pushing to **GitHub Container Registry (GHCR)**.
+GitHub Actions builds and publishes the image to GitHub Container Registry (GHCR).
 
-### Running with GHCR Image
+### Running with GHCR image
 
 ```bash
 docker run -d \
@@ -124,30 +150,26 @@ docker run -d \
   -p 8080:8080 \
   -e APP_MASTER_KEY="your-stable-encryption-key" \
   -v ./data:/data \
-  ghcr.io/<your-github-username>/ashan-openrouter-manager:latest
+  ghcr.io/ashanzzz/ashan-openrouter-manager:latest
 ```
+
+To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use **Semantic Versioning** (`vX.Y.Z`).
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.1**.
 
-To cut a new version release:
+To release:
 
-1. Update `version` in `Cargo.toml` (e.g., `version = "3.0.1"`).
-2. Commit changes: `git commit -am "bump version to v3.0.1"`
-3. Tag and push to trigger automated build & release:
-   ```bash
-   git tag -a v3.0.1 -m "Release v3.0.1"
-   git push origin v3.0.1
-   ```
-   *(Or run `make release-tag VERSION=v3.0.1`)*
+```bash
+git add .
+git commit -m "release: v3.0.1 simplify single-port deployment"
+git tag -a v3.0.1 -m "Release v3.0.1"
+git push origin main --tags
+```
 
-GitHub Actions will automatically:
-- Build the multi-stage Docker image with layer caching.
-- Tag and publish images to GHCR: `:latest`, `:3.0.1`, `:3.0`, `:3`.
-- Create a new **GitHub Release** with auto-generated release notes.
+The workflow publishes `latest`, `main` on main builds, version tags on releases, and a short SHA tag. Main and tag runs use separate concurrency groups so tagging a commit does not cancel the main-branch build for the same SHA.
 
 ## Project status
 
-This repository is the v3 refactor baseline. The architecture intentionally removes Windmill heartbeat/runnables, generation-based blue-green channels and the monolithic manager action API while preserving the core model-selection and exact-channel safety rules.
-
+This repository is the v3 refactor baseline. It removes Windmill heartbeat/runnables, generation-based blue-green channels and the monolithic manager action API while preserving the core model-selection and exact-channel safety rules.

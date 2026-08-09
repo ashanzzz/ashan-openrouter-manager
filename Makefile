@@ -1,4 +1,4 @@
-.PHONY: build up down logs test fmt release-tag
+.PHONY: build up down logs test fmt
 
 build:
 	docker compose build
@@ -18,9 +18,3 @@ test:
 
 fmt:
 	cargo fmt --all
-
-release-tag:
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make release-tag VERSION=v3.0.0"; exit 1; fi
-	git tag -a $(VERSION) -m "Release $(VERSION)"
-	git push origin $(VERSION)
-
