@@ -82,3 +82,8 @@ The public alias is deliberately decoupled from resource ownership. Multiple New
 - **Related**: shares group/tag/prefix metadata but neither serves the alias nor claims enough AOM identity to be adopted. Diagnostic only.
 
 This keeps New API routing concerns (alias, priority, weight) separate from AOM ownership concerns (exact ID + identity verification).
+
+
+## New API adapter schema boundary (v3.0.6)
+
+Business settings remain typed for AOM semantics (`auto_ban: bool`). The New API adapter owns wire-format compatibility and serializes `auto_ban` as integer `1`/`0`, matching the current New API `Channel` schema. This prevents New API-specific transport details from leaking into the application settings model.

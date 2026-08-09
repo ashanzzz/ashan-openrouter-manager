@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0.6
+
+- Fixed New API channel creation against the current `Channel.auto_ban` schema: AOM now serializes the internal boolean as integer `1`/`0` at the New API adapter boundary.
+- Applied the same `auto_ban` integer conversion to managed-channel update requests so forced/changed syncs keep the New API setting consistent.
+- Added explicit `New API API Schema` sync-log classification for Go JSON decode errors such as `cannot unmarshal ... into Go struct field`.
+- Added a unit test ensuring `true -> 1` and `false -> 0` encoding.
+- Preserved v3.0.5 hybrid routing: manual `ashan-ai-model` channels remain read-only and may coexist with the three AOM-managed Top3 channels.
+- No AppData or database reset is required when upgrading from v3.0.5.
+
 ## v3.0.5
 
 - Added first-class hybrid routing: user-managed New API channels and AOM-managed OpenRouter Top3 channels may expose the same public alias at the same time.

@@ -130,9 +130,14 @@ New API selects channels using its own priority/weight rules. AOM displays the c
 A hard block is used only when a channel claims explicit AOM identity but its ID is absent from the local managed-channel registry, because silently adopting or overwriting such an orphan would be unsafe.
 
 
+### New API schema compatibility
+
+AOM keeps `auto_ban` as a boolean business setting internally, but the current New API `Channel` schema represents `auto_ban` as an integer (`1` enabled, `0` disabled). The New API adapter converts the value at the API boundary for both channel creation and channel updates. Schema decode errors such as `cannot unmarshal ... into Go struct field` are classified separately in synchronization logs as **New API API Schema** errors.
+
+
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.5 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.6 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -220,14 +225,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.5**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.6**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.5 allow manual + AOM hybrid routing"
-git tag -a v3.0.5 -m "Release v3.0.5"
+git commit -m "release: v3.0.6 fix New API auto_ban schema compatibility"
+git tag -a v3.0.6 -m "Release v3.0.6"
 git push origin main --tags
 ```
 

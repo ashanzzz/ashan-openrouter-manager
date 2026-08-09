@@ -1,6 +1,6 @@
 # Synchronization logging
 
-v3.0.5 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
+v3.0.6 records every manual and scheduled synchronization as a `SyncRun` plus ordered entries in `sync_run_logs`.
 
 ## Stages
 
@@ -38,3 +38,8 @@ Sharing only `managed_group` is not proof of ownership and therefore does not bl
 ## Secret handling
 
 Synchronization logs never intentionally contain OpenRouter API keys, New API administrator tokens, or New API test tokens. Connection URLs, channel IDs, model IDs, status codes and API error summaries may be recorded for diagnosis.
+
+
+## API schema compatibility diagnostics
+
+New API Go JSON decode failures such as `cannot unmarshal bool into Go struct field ... of type int` are categorized as `newapi_schema` and displayed as **New API API Schema**. These indicate an API payload/schema mismatch, not an administrator permission problem.

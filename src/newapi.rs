@@ -14,6 +14,10 @@ use crate::{
 
 const OWNER_ID: &str = "ashan-openrouter-manager-v3";
 
+fn newapi_auto_ban(value: bool) -> i32 {
+    if value { 1 } else { 0 }
+}
+
 #[derive(Clone)]
 pub struct NewApiClient {
     http: Client,
@@ -74,9 +78,17 @@ impl NewApiClient {
             )));
         }
         if value.get("success").and_then(|x| x.as_bool()) == Some(false) {
+            let message = value
+                .get("message")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| value.to_string());
+            if message.contains("cannot unmarshal") || message.contains("Go struct field") {
+                return Err(AppError::bad(format!(
+                    "New API API Schema 兼容性错误：{context}: {message}"
+                )));
+            }
             return Err(AppError::bad(format!(
-                "New API 返回失败：{context}: {}",
-                value.get("message").unwrap_or(&value)
+                "New API 返回失败：{context}: {message}"
             )));
         }
         Ok(value)
@@ -202,7 +214,7 @@ impl NewApiClient {
             "priority": priority,
             "weight": settings.channel_weight,
             "status": settings.disabled_status,
-            "auto_ban": settings.auto_ban,
+            "auto_ban": newapi_auto_ban(settings.auto_ban),
             "tag": settings.managed_tag,
             "model_mapping": mapping_string(&settings.alias_model, &model.id),
             "remark": format!("{};rank={}", OWNER_ID, rank),
@@ -327,6 +339,7 @@ impl NewApiClient {
             "model_mapping": mapping_string(&settings.alias_model,new_model),
             "priority": registered.priority,
             "weight": settings.channel_weight,
+            "auto_ban": newapi_auto_ban(settings.auto_ban),
             "tag": settings.managed_tag,
             "group": settings.managed_group,
             "groups": [settings.managed_group],
@@ -687,6 +700,12 @@ mod tests {
         assert_eq!(report.manual_channels.len(), 1);
         assert!(report.orphan_channels.is_empty());
         assert_eq!(report.route_mode, "manual_only");
+    }
+
+    #[test]
+    fn auto_ban_is_encoded_as_newapi_integer() {
+        assert_eq!(newapi_auto_ban(true), 1);
+        assert_eq!(newapi_auto_ban(false), 0);
     }
 
     #[test]

@@ -76,3 +76,13 @@ The first live New API sync must still be tested against the exact New API build
 - `/api/routing` returns only non-secret routing metadata (ID, name, status, priority, weight, group/tag, model list and alias mapping target).
 - Overview renders Manual Pool and AOM Managed Pool separately and explains the current priority relationship.
 - Existing SQLite schema remains compatible; no AppData reset is required.
+
+
+## v3.0.6 New API schema compatibility checks
+
+- Verified against the current New API source model: `Channel.AutoBan` is `*int`, not a JSON boolean.
+- AOM retains a boolean setting internally and converts it to `1`/`0` only in the New API adapter.
+- Both channel creation and managed-channel update payloads use the integer representation.
+- Sync errors containing Go JSON schema decode failures are classified as `newapi_schema` and rendered as `New API API Schema`.
+- Added a Rust unit test for `true -> 1` and `false -> 0` encoding.
+- No SQLite schema change is introduced by v3.0.6.
