@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.0.3
+
+- Added two automatic synchronization modes: interval-based and daily fixed-time scheduling.
+- Added daily fixed-time scheduling with an explicit IANA timezone; default fixed-time draft is `00:00` in `Asia/Shanghai`.
+- Fixed-time schedules survive container restarts without drifting to “24 hours after restart”.
+- Added DST-safe local-time resolution for time zones with clock transitions.
+- Added persistent scheduler status with both UTC next-run time and the configured local-time representation.
+- Added an **立即同步** action inside the automation settings card as well as the global header.
+- Manual sync always performs a fresh catalog scan, ranking and real preflight before comparing/updating the three managed New API channels.
+- Manual scan/sync are blocked when there are unsaved connection or model-rule drafts, preventing actions from silently using stale persisted settings.
+- Improved sync feedback to show the selected Top 3 and whether New API was actually changed.
+- Improved history labels for manual vs scheduled sync and update/no-change/failure outcomes.
+- Added scheduler unit tests for interval mode and daily midnight in `Asia/Shanghai`.
+
 ## v3.0.2
 
 - Fixed New API base URL disappearing after saving credentials.

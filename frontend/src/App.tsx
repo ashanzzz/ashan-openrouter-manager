@@ -215,10 +215,13 @@ export default function App() {
     setBusy('sync')
     try {
       const response = await api.sync(false)
+      const selected = response.run.selected_models.map((model, index) => `#${index + 1} ${model}`).join(' · ')
       setToast({
         tone: 'success',
         title: response.run.changed ? '同步完成' : '无需更新',
-        detail: response.run.changed ? 'New API 的 3 条受管渠道已更新并验证' : '当前 Top 3 与线上配置一致',
+        detail: response.run.changed
+          ? `已重新扫描并更新 New API：${selected}`
+          : `已重新扫描，当前 Top 3 与线上一致：${selected}`,
       })
       await refreshRuntime()
     } catch (error: any) {
@@ -245,8 +248,15 @@ export default function App() {
     )
   }
 
-  const canScan = status.secrets.openrouter_api_key
-  const canSync = status.configured
+  const unsavedConnectionChanges =
+    secrets.openrouter_api_key.trim().length > 0 ||
+    secrets.newapi_admin_token.trim().length > 0 ||
+    secrets.newapi_test_token.trim().length > 0 ||
+    normalizeUrl(settings.newapi_base_url) !== normalizeUrl(savedSettings.newapi_base_url) ||
+    settings.newapi_admin_user_id.trim() !== savedSettings.newapi_admin_user_id.trim()
+  const unsavedRuleChanges = rulesSnapshot(settings) !== rulesSnapshot(savedSettings)
+  const canScan = status.secrets.openrouter_api_key && !secrets.openrouter_api_key.trim() && !unsavedRuleChanges
+  const canSync = status.configured && !unsavedConnectionChanges && !unsavedRuleChanges
 
   return (
     <div className="shell">
@@ -255,7 +265,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.2</span>
+            <span>Manager v3.0.3</span>
           </div>
         </div>
         <nav>
@@ -288,14 +298,14 @@ export default function App() {
             <h1>{page === 'overview' ? '总览' : page === 'models' ? '模型' : page === 'history' ? '运行历史' : '设置'}</h1>
           </div>
           <div className="actions">
-            <button onClick={runScan} disabled={!!busy || !canScan} title={!canScan ? '请先保存 OpenRouter API Key' : undefined}>
+            <button onClick={runScan} disabled={!!busy || !canScan} title={!canScan ? '请先保存 OpenRouter Key 和模型规则后再检查' : undefined}>
               <ButtonContent busy={busy === 'scan'} idle="立即检查" loading="正在检查" />
             </button>
             <button
               className="primary"
               onClick={runSync}
               disabled={!!busy || !canSync}
-              title={!canSync ? '请先完成 OpenRouter 与 New API 基础配置' : undefined}
+              title={!canSync ? '请先保存所有连接与模型设置，再执行同步' : '重新扫描、实测 Top 3，并在需要时更新 New API'}
             >
               <ButtonContent busy={busy === 'sync'} idle="立即同步" loading="正在同步" />
             </button>
@@ -324,6 +334,8 @@ export default function App() {
               setBusy={setBusy}
               setToast={setToast}
               refreshRuntime={refreshRuntime}
+              onSync={runSync}
+              canSync={canSync}
             />
           )}
         </section>
@@ -346,7 +358,7 @@ function OverviewPage({ status, settings, scan }: { status: Status; settings: Se
         </div>
         <div className="health">
           <Badge tone={status.configured ? 'ok' : 'warn'}>{status.configured ? '运行就绪' : '需要配置'}</Badge>
-          <span>下次自动执行 {fmt(status.scheduler.next_run_at)}</span>
+          <span>下次自动执行 {status.scheduler.next_run_local || fmt(status.scheduler.next_run_at)}</span>
         </div>
       </div>
 
@@ -434,8 +446,8 @@ function HistoryPage({ runs }: { runs: Run[] }) {
         {runs.map((run) => (
           <div className="run" key={run.id}>
             <div>
-              <Badge tone={run.status === 'failed' ? 'bad' : run.changed ? 'ok' : 'muted'}>{run.status}</Badge>
-              <b>{run.trigger}</b>
+              <Badge tone={run.status === 'failed' ? 'bad' : run.changed ? 'ok' : 'muted'}>{run.status === 'failed' ? '失败' : run.changed ? '已更新' : '无变化'}</Badge>
+              <b>{run.trigger === 'manual' ? '手动同步' : run.trigger === 'schedule' ? '定时同步' : run.trigger}</b>
               <span>{fmt(run.started_at)}</span>
             </div>
             <p>{run.error || run.selected_models.join(' · ') || '没有模型变化'}</p>
@@ -460,6 +472,8 @@ function SettingsPage({
   setBusy,
   setToast,
   refreshRuntime,
+  onSync,
+  canSync,
 }: {
   settings: Settings
   savedSettings: Settings
@@ -473,6 +487,8 @@ function SettingsPage({
   setBusy: Dispatch<SetStateAction<BusyAction>>
   setToast: Dispatch<SetStateAction<Toast | null>>
   refreshRuntime: () => Promise<void>
+  onSync: () => Promise<void>
+  canSync: boolean
 }) {
   const set = (key: keyof Settings, value: any) => setSettings((current) => (current ? { ...current, [key]: value } : current))
 
@@ -571,7 +587,7 @@ function SettingsPage({
       }
       setSavedSettings(response.settings)
       setSettings({ ...response.settings, ...connectionDraft })
-      setToast({ tone: 'success', title: '模型与自动化设置已保存', detail: '新的规则会在下一次检查或同步时生效。' })
+      setToast({ tone: 'success', title: '模型与自动化设置已保存', detail: settings.auto_sync ? '自动调度已重新计算，新的执行计划立即生效。' : '新的规则会在下一次检查或同步时生效。' })
       await refreshRuntime()
     } catch (error: any) {
       setToast({ tone: 'error', title: '保存设置失败', detail: error.message })
@@ -742,16 +758,76 @@ function SettingsPage({
           <input type="checkbox" checked={settings.auto_sync} onChange={(event) => set('auto_sync', event.target.checked)} />
           <span>启用自动同步</span>
         </div>
-        <label>
-          同步周期
-          <select value={settings.sync_interval_minutes} onChange={(event) => set('sync_interval_minutes', +event.target.value)}>
-            <option value={60}>1 小时</option>
-            <option value={180}>3 小时</option>
-            <option value={360}>6 小时</option>
-            <option value={720}>12 小时</option>
-            <option value={1440}>24 小时</option>
-          </select>
-        </label>
+
+        <div className="schedule-mode" role="group" aria-label="自动同步方式">
+          <button type="button" className={settings.schedule_mode === 'interval' ? 'active' : ''} onClick={() => set('schedule_mode', 'interval')}>
+            按间隔
+          </button>
+          <button type="button" className={settings.schedule_mode === 'daily' ? 'active' : ''} onClick={() => set('schedule_mode', 'daily')}>
+            每天固定时间
+          </button>
+        </div>
+
+        {settings.schedule_mode === 'interval' ? (
+          <label>
+            同步周期
+            <select value={settings.sync_interval_minutes} onChange={(event) => set('sync_interval_minutes', +event.target.value)}>
+              <option value={60}>每 1 小时</option>
+              <option value={180}>每 3 小时</option>
+              <option value={360}>每 6 小时</option>
+              <option value={720}>每 12 小时</option>
+              <option value={1440}>每 24 小时</option>
+            </select>
+            <small>按间隔模式从服务启动或设置保存后开始计算下一次执行。</small>
+          </label>
+        ) : (
+          <div className="form-grid schedule-grid">
+            <label>
+              每天执行时间
+              <input type="time" step="60" value={settings.daily_sync_time} onChange={(event) => set('daily_sync_time', event.target.value)} />
+              <small>例如 00:00 表示每天零点执行。</small>
+            </label>
+            <label>
+              时区
+              <select value={settings.schedule_timezone} onChange={(event) => set('schedule_timezone', event.target.value)}>
+                <option value="Asia/Shanghai">Asia/Shanghai · 中国标准时间</option>
+                <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="UTC">UTC</option>
+              </select>
+              <small>固定时间以这里选择的时区为准，不依赖 Docker 主机时区。</small>
+            </label>
+          </div>
+        )}
+
+        <div className={`schedule-summary ${settings.auto_sync ? 'enabled' : ''}`}>
+          <div>
+            <span className="status-dot" />
+            <div>
+              <strong>{settings.auto_sync ? '自动同步已启用' : '自动同步未启用'}</strong>
+              <span>
+                {settings.schedule_mode === 'daily'
+                  ? `每天 ${settings.daily_sync_time || '00:00'} · ${settings.schedule_timezone}`
+                  : `每 ${Math.round(settings.sync_interval_minutes / 60)} 小时`}
+              </span>
+            </div>
+          </div>
+          <span className="next-run">下次执行：{rulesDirty ? '保存后重新计算' : status.scheduler.next_run_local || fmt(status.scheduler.next_run_at)}</span>
+        </div>
+
+        <div className="manual-sync-card">
+          <div>
+            <strong>立即同步</strong>
+            <span>不等待定时任务。立即重新扫描、实测 Top 3，并仅在结果变化时更新 New API。</span>
+          </div>
+          <button className="primary" type="button" onClick={() => void onSync()} disabled={!!busy || !canSync} title={!canSync ? '请先保存连接配置和模型设置' : undefined}>
+            <ButtonContent busy={busy === 'sync'} idle="立即同步" loading="正在扫描并同步" />
+          </button>
+        </div>
+
         <div className="card-footer-actions">
           <button className="primary" onClick={saveRules} disabled={!!busy || !rulesDirty}>
             <ButtonContent busy={busy === 'save-settings'} idle="保存模型与自动化设置" loading="正在保存" />

@@ -1,9 +1,10 @@
 use std::{path::Path, str::FromStr};
 
-use chrono::Utc;
+use chrono::{NaiveTime, Utc};
+use chrono_tz::Tz;
 use sqlx::{sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions}, Row, SqlitePool};
 
-use crate::{error::AppError, models::{AppSettings, ConnectionChecks, ManagedChannel, ScanResult, SyncRun}};
+use crate::{error::AppError, models::{AppSettings, ConnectionChecks, ManagedChannel, ScanResult, ScheduleMode, SyncRun}};
 
 #[derive(Clone)]
 pub struct Database { pool: SqlitePool }
@@ -55,7 +56,18 @@ impl Database {
     fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
         if settings.candidate_pool < 3 { return Err(AppError::bad("candidate_pool must be at least 3")); }
         if settings.preflight_concurrency == 0 { return Err(AppError::bad("preflight_concurrency must be at least 1")); }
-        if settings.sync_interval_minutes < 60 { return Err(AppError::bad("sync interval must be at least 60 minutes")); }
+        match settings.schedule_mode {
+            ScheduleMode::Interval if settings.sync_interval_minutes < 60 => {
+                return Err(AppError::bad("sync interval must be at least 60 minutes"));
+            }
+            ScheduleMode::Daily => {
+                NaiveTime::parse_from_str(settings.daily_sync_time.trim(), "%H:%M")
+                    .map_err(|_| AppError::bad("daily sync time must use HH:MM format"))?;
+                settings.schedule_timezone.trim().parse::<Tz>()
+                    .map_err(|_| AppError::bad("schedule timezone is not a valid IANA timezone"))?;
+            }
+            ScheduleMode::Interval => {}
+        }
         if settings.alias_model.trim().is_empty() { return Err(AppError::bad("alias_model cannot be empty")); }
         Ok(())
     }

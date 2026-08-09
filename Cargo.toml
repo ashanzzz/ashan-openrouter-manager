@@ -1,6 +1,6 @@
 [package]
 name = "ashan-openrouter-manager"
-version = "3.0.2"
+version = "3.0.3"
 edition = "2024"
 license = "MIT"
 description = "OpenRouter free-model selector and New API synchronizer"
@@ -11,6 +11,7 @@ anyhow = "1"
 axum = "0.8"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 futures-util = "0.3"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

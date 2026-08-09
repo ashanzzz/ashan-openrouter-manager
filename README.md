@@ -80,6 +80,23 @@ To use another host port without changing the container port:
 HOST_PORT=18080 bash scripts/install-unraid-template.sh
 ```
 
+
+## Synchronization modes
+
+Manual **立即同步** and scheduled synchronization use the same safe pipeline: fresh OpenRouter catalog scan -> benchmark ranking -> real preflight -> Top 3 -> compare current mappings -> update only when needed -> verify/rollback on failure. Manual sync does not require automatic sync to be enabled.
+
+Automatic sync supports two modes:
+
+```text
+Interval
+  every 1 / 3 / 6 / 12 / 24 hours
+
+Daily fixed time
+  e.g. 00:00 Asia/Shanghai
+```
+
+Daily fixed-time scheduling uses an explicit IANA timezone and is independent of the Docker host timezone. Restarting the container does not turn “every day at 00:00” into “24 hours after restart”. The UI shows the exact next execution time.
+
 ## New API managed resources
 
 Default identity:
@@ -109,7 +126,7 @@ Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive 
 | `WEBUI_PORT` | Compose only | `8080` | host-side published port; container remains `8080` |
 | `RUST_LOG` | no | `info` | tracing filter |
 
-`PORT` is intentionally **not** a user setting in v3.0.2. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
+`PORT` is intentionally **not** a user setting in v3.0.3. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
 
 
 ## Connection settings UX
@@ -173,14 +190,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.2**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.3**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.2 fix connection settings and UX"
-git tag -a v3.0.2 -m "Release v3.0.2"
+git commit -m "release: v3.0.3 add fixed-time scheduler and immediate sync UX"
+git tag -a v3.0.3 -m "Release v3.0.3"
 git push origin main --tags
 ```
 

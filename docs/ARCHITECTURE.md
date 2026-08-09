@@ -48,3 +48,16 @@ Connection identity is a separate persistence concern from model-selection setti
 - The React UI keeps editable drafts separate from server-persisted settings; background status refreshes never replace in-progress edits.
 
 This separation prevents UI refresh behavior from becoming a data-loss path and keeps connection verification aligned with the exact configuration used by scheduled synchronization.
+
+
+## Scheduler boundary (v3.0.3)
+
+The scheduler remains an orchestration adapter only; it never contains model-selection or New API mutation logic. Both schedule modes ultimately call the same `sync::run` path used by manual synchronization.
+
+- `interval`: schedules the next run after the configured interval.
+- `daily`: resolves an `HH:MM` wall-clock time in an explicit IANA timezone and schedules the next occurrence.
+- fixed-time mode does not depend on the container/host timezone and therefore does not drift when the container restarts.
+- DST gaps are shifted forward to the first valid local minute; ambiguous local times use the earlier occurrence.
+- saving settings notifies the scheduler immediately so the active timer is rebuilt.
+
+Manual **立即同步** is deliberately not a shortcut around validation: it always calls the normal sync pipeline, which performs a fresh OpenRouter scan, benchmark ranking, real preflight, Top-3 comparison and safe New API update/rollback.

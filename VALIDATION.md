@@ -54,3 +54,14 @@ The first live New API sync must still be tested against the exact New API build
 - UI visibly differentiates configured-but-untested from verified connected state.
 - TypeScript application structure was checked with TypeScript 5.8.3 using temporary React type shims; temporary shims are excluded from the release package.
 - Rust toolchain is still unavailable in this sandbox, so GitHub Actions remains the authoritative Rust/Docker build verification for this release.
+
+
+## v3.0.3 scheduler and manual-sync update
+
+- Added backward-compatible schedule fields using Serde defaults, so existing v3.0.2 SQLite settings continue to load.
+- Added `schedule_mode = interval | daily`, `daily_sync_time` and `schedule_timezone`.
+- Daily time is validated as `HH:MM`; timezone is validated as an IANA timezone before settings are persisted.
+- Scheduler publishes `next_run_at` plus `next_run_local` for unambiguous UI display.
+- Added unit-test cases for 6-hour interval scheduling and `00:00 Asia/Shanghai`.
+- Manual sync remains the same production-safe pipeline and now has stronger UI state/feedback.
+- Final Rust/Docker compilation should still be verified by GitHub Actions because this sandbox does not provide `cargo` or a Docker daemon.

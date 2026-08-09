@@ -106,6 +106,9 @@ async fn save_settings(
     }
 
     state.db.save_settings(&settings).await?;
+    if let Ok(next_status) = crate::scheduler::preview_status(&settings, Utc::now()) {
+        *state.scheduler_status.write().await = next_status;
+    }
     state.scheduler_notify.notify_one();
     Ok(Json(json!({"ok": true, "message": "设置已保存", "settings": settings})))
 }

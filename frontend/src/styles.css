@@ -232,3 +232,28 @@ details summary { cursor: pointer; font-weight: 720; }
   .settings-card-head, .save-bar, .service-head { flex-direction: column; align-items: flex-start; }
   .save-bar button { width: 100%; }
 }
+
+.schedule-mode { display: inline-flex; padding: 3px; border: 1px solid #dde3ec; background: #f5f7fa; border-radius: 11px; gap: 3px; margin: 10px 0 4px; }
+.schedule-mode button { border: 0; background: transparent; color: #748096; box-shadow: none; padding: 8px 13px; border-radius: 8px; font-size: 12px; font-weight: 720; }
+.schedule-mode button:hover { background: rgba(255,255,255,.7); }
+.schedule-mode button.active { background: #fff; color: #315efb; box-shadow: 0 1px 3px rgba(25,40,72,.10); }
+.schedule-grid { margin-top: 2px; }
+.schedule-summary { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 14px; border: 1px solid #e3e7ee; border-radius: 12px; background: #fafbfd; }
+.schedule-summary > div { display: flex; align-items: center; gap: 10px; }
+.schedule-summary .status-dot { width: 9px; height: 9px; border-radius: 999px; background: #a9b1bf; box-shadow: 0 0 0 4px rgba(169,177,191,.12); flex: 0 0 auto; }
+.schedule-summary.enabled .status-dot { background: #20b875; box-shadow: 0 0 0 4px rgba(32,184,117,.12); }
+.schedule-summary > div > div { display: grid; gap: 2px; }
+.schedule-summary strong { color: #47546b; font-size: 12px; }
+.schedule-summary > div span:not(.status-dot), .schedule-summary .next-run { color: #8c96a8; font-size: 11px; }
+.schedule-summary .next-run { text-align: right; }
+.manual-sync-card { margin-top: 14px; padding: 15px 16px; border: 1px solid #dfe5f0; border-radius: 13px; background: linear-gradient(135deg, #fbfcff, #f6f8ff); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.manual-sync-card > div { display: grid; gap: 4px; }
+.manual-sync-card strong { color: #334057; font-size: 13px; }
+.manual-sync-card span { color: #818ca0; font-size: 11px; line-height: 1.5; max-width: 620px; }
+.manual-sync-card button { flex: 0 0 auto; }
+
+@media (max-width: 640px) {
+  .schedule-summary, .manual-sync-card { flex-direction: column; align-items: flex-start; }
+  .schedule-summary .next-run { text-align: left; }
+  .manual-sync-card button { width: 100%; }
+}

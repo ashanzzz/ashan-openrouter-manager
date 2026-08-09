@@ -23,7 +23,13 @@ pub struct AppSettings {
     pub agentic_weight: f64,
     pub context_weight: f64,
     pub auto_sync: bool,
+    #[serde(default)]
+    pub schedule_mode: ScheduleMode,
     pub sync_interval_minutes: u64,
+    #[serde(default = "default_daily_sync_time")]
+    pub daily_sync_time: String,
+    #[serde(default = "default_schedule_timezone")]
+    pub schedule_timezone: String,
     pub channel_type: i64,
     pub enabled_status: i64,
     pub disabled_status: i64,
@@ -58,7 +64,10 @@ impl Default for AppSettings {
             agentic_weight: 0.10,
             context_weight: 0.0,
             auto_sync: false,
+            schedule_mode: ScheduleMode::Interval,
             sync_interval_minutes: 360,
+            daily_sync_time: default_daily_sync_time(),
+            schedule_timezone: default_schedule_timezone(),
             channel_type: 20,
             enabled_status: 1,
             disabled_status: 2,
@@ -74,6 +83,17 @@ impl Default for AppSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RankingMode { IntelligenceFirst, Weighted }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleMode {
+    #[default]
+    Interval,
+    Daily,
+}
+
+fn default_daily_sync_time() -> String { "00:00".into() }
+fn default_schedule_timezone() -> String { "Asia/Shanghai".into() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterModel {
@@ -156,7 +176,9 @@ pub struct SyncRun {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerStatus {
     pub next_run_at: Option<String>,
+    pub next_run_local: Option<String>,
     pub enabled: bool,
+    pub mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

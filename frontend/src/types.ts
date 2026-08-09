@@ -1,4 +1,5 @@
 export type RankingMode = 'intelligence_first' | 'weighted'
+export type ScheduleMode = 'interval' | 'daily'
 export type ConnectionState = 'unknown' | 'connected' | 'failed'
 
 export interface Settings {
@@ -23,7 +24,10 @@ export interface Settings {
   agentic_weight: number
   context_weight: number
   auto_sync: boolean
+  schedule_mode: ScheduleMode
   sync_interval_minutes: number
+  daily_sync_time: string
+  schedule_timezone: string
   channel_type: number
   enabled_status: number
   disabled_status: number
@@ -101,7 +105,7 @@ export interface Status {
   current_models: Channel[]
   last_scan?: Scan | null
   last_run?: Run | null
-  scheduler: { next_run_at?: string | null; enabled: boolean }
+  scheduler: { next_run_at?: string | null; next_run_local?: string | null; enabled: boolean; mode: string }
   secrets: SecretStatus
   connections: ConnectionChecks
 }
