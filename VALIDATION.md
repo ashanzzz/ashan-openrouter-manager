@@ -86,3 +86,14 @@ The first live New API sync must still be tested against the exact New API build
 - Sync errors containing Go JSON schema decode failures are classified as `newapi_schema` and rendered as `New API API Schema`.
 - Added a Rust unit test for `true -> 1` and `false -> 0` encoding.
 - No SQLite schema change is introduced by v3.0.6.
+
+
+## v3.0.7 multi-round model-health checks
+
+- Existing settings JSON remains backward compatible through serde defaults: attempts=3, interval=60 seconds, minimum success rate=0.30.
+- SQLite creates `model_health_checks` and `model_health_summary` with `CREATE TABLE IF NOT EXISTS`; existing AppData upgrades in place.
+- Candidate testing runs by rounds across the whole candidate set, not three sequential waits per individual model.
+- R1 keeps the best original capability rank; R2/R3 prioritize health among the remaining qualified candidates and use capability rank as a tie-breaker.
+- Default 1/3 success = 33.3%, which passes the 30% threshold; 0/3 fails.
+- Manual scan, manual sync and scheduled sync call the same health engine.
+- The sandbox still has no Rust toolchain/Docker daemon; GitHub Actions remains authoritative for `cargo test` and image build.

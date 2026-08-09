@@ -87,3 +87,8 @@ This keeps New API routing concerns (alias, priority, weight) separate from AOM 
 ## New API adapter schema boundary (v3.0.6)
 
 Business settings remain typed for AOM semantics (`auto_ban: bool`). The New API adapter owns wire-format compatibility and serializes `auto_ban` as integer `1`/`0`, matching the current New API `Channel` schema. This prevents New API-specific transport details from leaking into the application settings model.
+
+
+## Quality-first Model Health Engine (v3.0.7)
+
+The health engine runs the entire candidate set in repeated rounds. Defaults are three rounds and a 60-second inter-round delay. Attempts are persisted individually. After the final round, candidates below the minimum success rate are removed. R1 is always the strongest qualified model; R2/R3 then prioritize health among the remaining qualified candidates, with capability rank as the tie-breaker. This deliberately protects top capability while making the backup slots more reliable.

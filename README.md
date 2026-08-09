@@ -7,11 +7,12 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 1. Reads the current OpenRouter model catalog.
 2. Keeps only zero-price text models that meet the configured context limit.
 3. Joins Artificial Analysis intelligence/coding/agentic benchmark data.
-4. Ranks candidates and performs real OpenRouter chat-completion preflight tests.
-5. Requires three usable models before changing production state.
-6. Maintains exactly three registered New API channels that all expose `ashan-ai-model`.
-7. Updates only those exact channel IDs. Manual New API channels may expose the same alias and remain strictly read-only.
-8. Runs automatically on an internal scheduler, with manual scan/sync controls in the web UI.
+4. Ranks candidates by capability, then performs multi-round OpenRouter health checks (default: 3 attempts, 60-second interval).
+5. Health never demotes the strongest qualified model: default threshold is 30%, so 1/3 success remains eligible for R1; R2/R3 prioritize healthier qualified fallbacks.
+6. Requires three qualified models before changing production state.
+7. Maintains exactly three registered New API channels that all expose `ashan-ai-model`.
+8. Updates only those exact channel IDs. Manual New API channels may expose the same alias and remain strictly read-only.
+9. Runs automatically on an internal scheduler, with manual scan/sync controls in the web UI.
 
 
 ### Observable synchronization
@@ -22,7 +23,7 @@ The log pipeline distinguishes:
 
 - configuration validation;
 - OpenRouter model catalog and benchmark retrieval;
-- model filtering/ranking and each real preflight result;
+- model filtering/ranking plus every round and attempt of the multi-round health check;
 - New API connection and administrator permission failures (401/403);
 - manual-channel coexistence, route priority diagnostics, and true AOM ownership conflicts;
 - exact managed-channel identity verification;
@@ -72,8 +73,8 @@ Then:
 3. Test both connections.
 4. Click **保存连接配置**. Connection fields and secrets are saved together.
 5. Test OpenRouter and New API separately. Successful tests display a persistent green **已连接** state with latency and result details.
-6. Run **立即检查** and inspect the top three.
-7. Run **立即同步**. On first sync, the service creates exactly three fixed managed channels.
+6. Run **立即检查**. By default each candidate is tested three times, with 60 seconds between rounds; the Models page shows success rate and last check time.
+7. Run **立即同步**. Synchronization always performs the same health check before selecting R1/R2/R3. On first sync, the service creates exactly three fixed managed channels.
 8. Enable automatic sync after the first successful live sync.
 
 ## Unraid
@@ -97,6 +98,29 @@ To use another host port without changing the container port:
 ```bash
 HOST_PORT=18080 bash scripts/install-unraid-template.sh
 ```
+
+## Quality-first model health policy
+
+AOM v3.0.7 is designed for a resilient three-channel pool rather than for choosing only the most stable model. The selection policy is:
+
+```text
+Capability ranking (Intelligence -> Coding -> Agentic)
+        |
+        v
+Multi-round health gate (default 3 checks, 60 s apart)
+        |
+        +-- success rate < 30% -> reject this run
+        `-- success rate >= 30% -> keep original capability rank
+        |
+        v
+R1 = strongest qualified model
+R2 = healthiest remaining qualified fallback (capability rank breaks ties)
+R3 = next healthiest remaining qualified fallback
+```
+
+Health success rate does **not** demote R1. A 1/3 model can remain R1 if it is the strongest candidate. R2/R3 deliberately prefer healthier remaining qualified models, while manual channels provide additional fallback capacity. Every manual scan, manual synchronization and scheduled synchronization uses the same health engine.
+
+Model health attempts are stored in SQLite (`model_health_checks`) and the latest summary is stored in `model_health_summary`. The Models page exposes the latest success ratio, per-attempt result, latency and last checked time. Existing databases upgrade in place.
 
 ## New API managed resources
 
@@ -137,7 +161,7 @@ AOM keeps `auto_ban` as a boolean business setting internally, but the current N
 
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.6 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.7 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -225,14 +249,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.6**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.7**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.6 fix New API auto_ban schema compatibility"
-git tag -a v3.0.6 -m "Release v3.0.6"
+git commit -m "release: v3.0.7 add quality-first multi-round model health"
+git tag -a v3.0.7 -m "Release v3.0.7"
 git push origin main --tags
 ```
 

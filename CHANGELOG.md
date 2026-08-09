@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.7
+
+- Replaced one-shot model preflight with a persistent multi-round Model Health Engine.
+- Default health policy: 3 attempts per candidate, 60 seconds between rounds, minimum success rate 30%.
+- R1 is always the strongest qualified candidate, even at 1/3 health; R2/R3 prioritize healthier remaining qualified candidates and use capability rank as the tie-breaker.
+- Manual scan, manual sync and scheduled sync now share the exact same multi-round health engine.
+- Added SQLite `model_health_checks` and `model_health_summary` tables with per-attempt timestamps, latency, success/failure and last error.
+- Models UI now shows health success rate, recent attempt results, last checked time and R1/R2/R3 roles.
+- Added configurable health attempts, interval and minimum success rate; attempts are validated to be at least 3.
+- Sync logs now show each health round, the wait between rounds, every model attempt and the final qualification decision.
+- Existing v3.0.6 AppData upgrades in place; no reset is required.
+
 ## v3.0.6
 
 - Fixed New API channel creation against the current `Channel.auto_ban` schema: AOM now serializes the internal boolean as integer `1`/`0` at the New API adapter boundary.

@@ -4,7 +4,7 @@ use chrono::{NaiveTime, Utc};
 use chrono_tz::Tz;
 use sqlx::{sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions}, Row, SqlitePool};
 
-use crate::{error::AppError, models::{AppSettings, ConnectionChecks, ManagedChannel, ScanResult, ScheduleMode, SyncLogEntry, SyncProgress, SyncRun}};
+use crate::{error::AppError, models::{AppSettings, ConnectionChecks, ManagedChannel, ModelHealthAttempt, RankedModel, ScanResult, ScheduleMode, SyncLogEntry, SyncProgress, SyncRun}};
 
 #[derive(Clone)]
 pub struct Database { pool: SqlitePool }
@@ -27,6 +27,9 @@ impl Database {
         sqlx::query("CREATE TABLE IF NOT EXISTS sync_runs (id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT NOT NULL, trigger TEXT NOT NULL, status TEXT NOT NULL, changed INTEGER NOT NULL, selected_models TEXT NOT NULL, error TEXT)").execute(&self.pool).await?;
         sqlx::query("CREATE TABLE IF NOT EXISTS sync_run_logs (run_id TEXT NOT NULL, seq INTEGER NOT NULL, timestamp TEXT NOT NULL, level TEXT NOT NULL, stage TEXT NOT NULL, category TEXT NOT NULL, message TEXT NOT NULL, detail TEXT, PRIMARY KEY(run_id, seq))").execute(&self.pool).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sync_run_logs_run_id ON sync_run_logs(run_id, seq)").execute(&self.pool).await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS model_health_checks (batch_id TEXT NOT NULL, model_id TEXT NOT NULL, attempt INTEGER NOT NULL, checked_at TEXT NOT NULL, success INTEGER NOT NULL, latency_ms INTEGER NOT NULL, error TEXT, PRIMARY KEY(batch_id, model_id, attempt))").execute(&self.pool).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_model_health_checks_model_time ON model_health_checks(model_id, checked_at DESC)").execute(&self.pool).await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS model_health_summary (model_id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, attempts INTEGER NOT NULL, successes INTEGER NOT NULL, success_rate REAL NOT NULL, average_latency_ms INTEGER, last_error TEXT, health_status TEXT NOT NULL, updated_at TEXT NOT NULL)").execute(&self.pool).await?;
         Ok(())
     }
 
@@ -79,6 +82,11 @@ impl Database {
     fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
         if settings.candidate_pool < 3 { return Err(AppError::bad("candidate_pool must be at least 3")); }
         if settings.preflight_concurrency == 0 { return Err(AppError::bad("preflight_concurrency must be at least 1")); }
+        if settings.health_check_attempts < 3 { return Err(AppError::bad("health_check_attempts must be at least 3")); }
+        if settings.health_check_interval_seconds < 60 { return Err(AppError::bad("health_check_interval_seconds must be at least 60 seconds")); }
+        if !(0.0..=1.0).contains(&settings.health_min_success_rate) || settings.health_min_success_rate <= 0.0 {
+            return Err(AppError::bad("health_min_success_rate must be greater than 0 and at most 1"));
+        }
         match settings.schedule_mode {
             ScheduleMode::Interval if settings.sync_interval_minutes < 60 => {
                 return Err(AppError::bad("sync interval must be at least 60 minutes"));
@@ -166,6 +174,25 @@ impl Database {
         Ok(rows.into_iter().map(|r| ManagedChannel {
             rank: r.get("rank"), channel_id: r.get("channel_id"), name: r.get("name"), model_id: r.get("model_id"), priority: r.get("priority"), updated_at: r.get("updated_at")
         }).collect())
+    }
+
+
+    pub async fn record_model_health_attempt(&self, attempt: &ModelHealthAttempt) -> Result<(), AppError> {
+        sqlx::query("INSERT OR REPLACE INTO model_health_checks(batch_id,model_id,attempt,checked_at,success,latency_ms,error) VALUES(?,?,?,?,?,?,?)")
+            .bind(&attempt.batch_id).bind(&attempt.model_id).bind(attempt.attempt as i64).bind(&attempt.checked_at)
+            .bind(if attempt.success { 1 } else { 0 }).bind(attempt.latency_ms as i64).bind(&attempt.error)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn upsert_model_health_summary(&self, model: &RankedModel) -> Result<(), AppError> {
+        let batch_id = model.health_batch_id.clone().unwrap_or_default();
+        sqlx::query("INSERT INTO model_health_summary(model_id,batch_id,last_checked_at,last_success_at,last_failure_at,attempts,successes,success_rate,average_latency_ms,last_error,health_status,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(model_id) DO UPDATE SET batch_id=excluded.batch_id,last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,last_failure_at=excluded.last_failure_at,attempts=excluded.attempts,successes=excluded.successes,success_rate=excluded.success_rate,average_latency_ms=excluded.average_latency_ms,last_error=excluded.last_error,health_status=excluded.health_status,updated_at=excluded.updated_at")
+            .bind(&model.id).bind(batch_id).bind(&model.last_checked_at).bind(&model.last_success_at).bind(&model.last_failure_at)
+            .bind(model.health_attempts as i64).bind(model.health_successes as i64).bind(model.health_success_rate)
+            .bind(model.average_latency_ms.map(|v| v as i64)).bind(&model.test_error).bind(&model.health_status).bind(Utc::now().to_rfc3339())
+            .execute(&self.pool).await?;
+        Ok(())
     }
 
 

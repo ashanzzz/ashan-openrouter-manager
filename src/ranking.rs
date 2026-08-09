@@ -37,6 +37,10 @@ pub fn rank(models: Vec<OpenRouterModel>, benchmarks: Vec<BenchmarkItem>, settin
             rank: 0, id: m.id, name: m.name, context_length: m.context_length,
             intelligence_index: intelligence, coding_index: coding, agentic_index: agentic,
             score: weighted, usable: None, test_error: None,
+            health_attempts: 0, health_successes: 0, health_success_rate: 0.0,
+            last_checked_at: None, last_success_at: None, last_failure_at: None,
+            average_latency_ms: None, health_status: String::new(), health_batch_id: None,
+            health_checks: vec![],
         });
     }
 

@@ -4,7 +4,6 @@ use std::sync::{
 };
 
 use chrono::Utc;
-use futures_util::{stream, StreamExt};
 use tokio::sync::OwnedMutexGuard;
 use uuid::Uuid;
 
@@ -74,7 +73,7 @@ fn stage_label(stage: &str) -> &'static str {
         "openrouter_models" => "OpenRouter 模型目录",
         "openrouter_benchmarks" => "OpenRouter Benchmark",
         "ranking" => "模型筛选与排名",
-        "preflight" => "候选模型真实调用",
+        "preflight" => "模型健康检测",
         "newapi_connection" => "New API 连接与权限",
         "newapi_conflicts" => "New API 渠道冲突检查",
         "newapi_routing" => "New API 路由池检查",
@@ -129,6 +128,52 @@ async fn secret(state: &AppState, name: &str) -> Result<String, AppError> {
     state.crypto.decrypt(&encrypted)
 }
 
+async fn log_health_event(
+    logger: &SyncLogger,
+    event: tester::HealthEvent,
+    total_rounds: usize,
+) {
+    match event {
+        tester::HealthEvent::RoundStarted { round, candidate_count, .. } => {
+            logger.log(
+                "info", "preflight", "model_health",
+                format!("开始第 {round}/{total_rounds} 轮模型健康检测"),
+                Some(format!("候选模型 {candidate_count} 个；本轮并发真实调用")),
+            ).await;
+        }
+        tester::HealthEvent::Attempt(attempt) => {
+            logger.log(
+                if attempt.success { "success" } else { "warning" },
+                "preflight", "model_health",
+                format!(
+                    "第 {}/{} 轮 {}：{}",
+                    attempt.attempt, total_rounds,
+                    if attempt.success { "成功" } else { "失败" },
+                    attempt.model_id
+                ),
+                Some(if attempt.success {
+                    format!("响应 {} ms", attempt.latency_ms)
+                } else {
+                    format!("响应 {} ms；{}", attempt.latency_ms, attempt.error.unwrap_or_else(|| "未知错误".into()))
+                }),
+            ).await;
+        }
+        tester::HealthEvent::RoundCompleted { round, .. } => {
+            logger.log(
+                "info", "preflight", "model_health",
+                format!("第 {round}/{total_rounds} 轮检测完成"), None,
+            ).await;
+        }
+        tester::HealthEvent::Waiting { seconds, next_round, .. } => {
+            logger.log(
+                "info", "preflight", "model_health",
+                format!("等待 {seconds} 秒后开始第 {next_round}/{total_rounds} 轮"),
+                Some("通过时间间隔降低瞬时上游抖动造成的误判".into()),
+            ).await;
+        }
+    }
+}
+
 pub async fn scan(state: &AppState) -> Result<ScanResult, AppError> {
     let settings = state.db.get_settings().await?;
     let key = secret(state, "openrouter_api_key").await?;
@@ -137,16 +182,21 @@ pub async fn scan(state: &AppState) -> Result<ScanResult, AppError> {
     let total = models.len();
     let benchmarks = client.benchmarks(&key).await?;
     let (free_count, candidates) = ranking::rank(models, benchmarks, &settings);
-    let tested = tester::preflight(client, key, candidates, settings.preflight_concurrency).await;
-    let selected: Vec<_> = tested
-        .iter()
-        .filter(|m| m.usable == Some(true))
-        .take(3)
-        .cloned()
-        .collect();
+    let tested = tester::health_check(
+        &state.db,
+        client,
+        key,
+        candidates,
+        settings.health_check_attempts,
+        settings.health_check_interval_seconds,
+        settings.health_min_success_rate,
+        settings.preflight_concurrency,
+        None,
+    ).await?;
+    let selected = tester::select_primary_and_fallbacks(&tested);
     let warning = if selected.len() < 3 {
         Some(format!(
-            "only {} usable models found; production will not be changed",
+            "只找到 {} 个达到健康准入线的模型；不会修改生产渠道",
             selected.len()
         ))
     } else {
@@ -383,65 +433,74 @@ async fn scan_with_logger(
         )
         .await;
 
+    let total_rounds = settings.health_check_attempts.max(3);
     logger
         .log(
             "info",
             "preflight",
-            "openrouter_api",
-            format!("开始真实调用候选模型，并发数 {}", settings.preflight_concurrency.max(1)),
-            None,
+            "model_health",
+            format!(
+                "开始模型健康检测：每个候选至少 {} 次，间隔 {} 秒，准入线 {:.0}%",
+                total_rounds,
+                settings.health_check_interval_seconds.max(60),
+                settings.health_min_success_rate * 100.0
+            ),
+            Some(format!(
+                "并发数 {}；健康率只作为准入门槛，不降低高智力模型的能力排名",
+                settings.preflight_concurrency.max(1)
+            )),
         )
         .await;
 
-    let mut pending = stream::iter(candidates.into_iter().map(|mut model| {
-        let client = client.clone();
-        let key = key.clone();
-        async move {
-            match client.test_model(&key, &model.id).await {
-                Ok(_) => model.usable = Some(true),
-                Err(e) => {
-                    model.usable = Some(false);
-                    model.test_error = Some(e.to_string());
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let health_future = tester::health_check(
+        &state.db,
+        client.clone(),
+        key.clone(),
+        candidates,
+        total_rounds,
+        settings.health_check_interval_seconds,
+        settings.health_min_success_rate,
+        settings.preflight_concurrency,
+        Some(event_tx),
+    );
+    tokio::pin!(health_future);
+
+    let tested: Vec<RankedModel> = loop {
+        tokio::select! {
+            result = &mut health_future => {
+                let models = result?;
+                while let Ok(event) = event_rx.try_recv() {
+                    log_health_event(logger, event, total_rounds).await;
+                }
+                break models;
+            }
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    log_health_event(logger, event, total_rounds).await;
                 }
             }
-            model
         }
-    }))
-    .buffer_unordered(settings.preflight_concurrency.max(1));
+    };
 
-    let mut tested: Vec<RankedModel> = Vec::new();
-    while let Some(model) = pending.next().await {
-        if model.usable == Some(true) {
-            logger
-                .log(
-                    "success",
-                    "preflight",
-                    "openrouter_api",
-                    format!("候选 #{} 可用：{}", model.rank, model.id),
-                    None,
-                )
-                .await;
-        } else {
-            logger
-                .log(
-                    "warning",
-                    "preflight",
-                    "openrouter_api",
-                    format!("候选 #{} 不可用：{}", model.rank, model.id),
-                    model.test_error.clone(),
-                )
-                .await;
-        }
-        tested.push(model);
+    for model in &tested {
+        logger.log(
+            if model.usable == Some(true) { "success" } else { "warning" },
+            "preflight", "model_health",
+            format!(
+                "健康评估 #{}：{} — {:.1}% ({}/{})",
+                model.rank, model.id, model.health_success_rate * 100.0,
+                model.health_successes, model.health_attempts
+            ),
+            Some(if model.usable == Some(true) {
+                "达到健康准入线；保持原能力排名资格".into()
+            } else {
+                format!("未达到 {:.0}% 准入线；本轮淘汰。最后错误：{}", settings.health_min_success_rate * 100.0, model.test_error.clone().unwrap_or_else(|| "无".into()))
+            }),
+        ).await;
     }
-    tested.sort_by_key(|m| m.rank);
 
-    let selected: Vec<_> = tested
-        .iter()
-        .filter(|m| m.usable == Some(true))
-        .take(3)
-        .cloned()
-        .collect();
+    let selected = tester::select_primary_and_fallbacks(&tested);
     let warning = if selected.len() < 3 {
         Some(format!("只找到 {} 个可用模型；不会修改生产渠道", selected.len()))
     } else {
@@ -454,12 +513,12 @@ async fn scan_with_logger(
                 "success",
                 "preflight",
                 "selection",
-                "已选出 3 个可用模型",
+                "已选出 3 个模型：R1 能力最强，R2/R3 优先选择更健康的合格模型作为兜底",
                 Some(
                     selected
                         .iter()
                         .enumerate()
-                        .map(|(i, m)| format!("#{} {}", i + 1, m.id))
+                        .map(|(i, m)| format!("R{} {}（能力排名 #{}；健康 {:.1}%）", i + 1, m.id, m.rank, m.health_success_rate * 100.0))
                         .collect::<Vec<_>>()
                         .join("；"),
                 ),

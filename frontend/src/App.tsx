@@ -31,6 +31,8 @@ type SecretDraft = {
 
 const fmt = (value?: string | null) => (value ? new Date(value).toLocaleString() : '—')
 const metric = (value?: number | null) => (value == null ? '—' : value.toFixed(1))
+const healthPct = (value?: number | null) => `${((value || 0) * 100).toFixed(1)}%`
+const healthTone = (value?: number | null, usable?: boolean | null) => (value == null ? 'muted' : usable === false ? 'bad' : value >= 0.999 ? 'ok' : value > 0 ? 'warn' : 'bad')
 const normalizeUrl = (value: string) => value.trim().replace(/\/+$/, '')
 
 function Badge({ children, tone = 'muted' }: { children: ReactNode; tone?: string }) {
@@ -78,7 +80,9 @@ function ModelTable({ models }: { models: RankedModel[] }) {
             <th>Coding</th>
             <th>Agentic</th>
             <th>Context</th>
-            <th>测试</th>
+            <th>健康成功率</th>
+            <th>最近检测</th>
+            <th>上次检测时间</th>
           </tr>
         </thead>
         <tbody>
@@ -94,13 +98,32 @@ function ModelTable({ models }: { models: RankedModel[] }) {
               <td>{metric(model.agentic_index)}</td>
               <td>{Math.round(model.context_length / 1024)}K</td>
               <td>
-                {model.usable === true ? (
-                  <Badge tone="ok">可用</Badge>
-                ) : model.usable === false ? (
-                  <Badge tone="bad">失败</Badge>
-                ) : (
-                  <Badge>未测试</Badge>
-                )}
+                {model.health_attempts ? (
+                  <div className="health-cell">
+                    <Badge tone={healthTone(model.health_success_rate, model.usable)}>{healthPct(model.health_success_rate)}</Badge>
+                    <small>{model.health_successes}/{model.health_attempts} · {model.usable ? '通过准入' : '未通过'}</small>
+                  </div>
+                ) : <Badge>未检测</Badge>}
+              </td>
+              <td>
+                <div className="health-attempts" aria-label="最近健康检测">
+                  {(model.health_checks || []).map((attempt) => (
+                    <span
+                      key={`${attempt.batch_id}-${attempt.attempt}`}
+                      className={attempt.success ? 'success' : 'failed'}
+                      title={`${attempt.success ? '成功' : '失败'} · ${attempt.latency_ms} ms${attempt.error ? ` · ${attempt.error}` : ''}`}
+                    >
+                      {attempt.success ? '✓' : '×'}
+                    </span>
+                  ))}
+                  {!model.health_checks?.length && <span className="muted">—</span>}
+                </div>
+              </td>
+              <td>
+                <div className="last-check-cell">
+                  <span>{fmt(model.last_checked_at)}</span>
+                  {model.average_latency_ms != null && <small>成功请求均值 {model.average_latency_ms} ms</small>}
+                </div>
               </td>
             </tr>
           ))}
@@ -128,7 +151,7 @@ const stageLabels: Record<string, string> = {
   openrouter_models: 'OpenRouter 模型',
   openrouter_benchmarks: 'Benchmark',
   ranking: '筛选与排名',
-  preflight: '真实调用测试',
+  preflight: '模型健康检测',
   newapi_connection: 'New API 连接/权限',
   newapi_conflicts: '渠道冲突检查',
   newapi_routing: '路由池检查',
@@ -144,6 +167,7 @@ const stageLabels: Record<string, string> = {
 const categoryLabels: Record<string, string> = {
   configuration: '配置',
   openrouter_api: 'OpenRouter API',
+  model_health: '模型健康',
   openrouter_permission: 'OpenRouter 权限',
   newapi_api: 'New API',
   newapi_schema: 'New API API Schema',
@@ -441,7 +465,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.6</span>
+            <span>Manager v3.0.7</span>
           </div>
         </div>
         <nav>
@@ -475,7 +499,7 @@ export default function App() {
           </div>
           <div className="actions">
             <button onClick={runScan} disabled={!!busy || !canScan} title={!canScan ? '请先保存 OpenRouter Key 和模型规则后再检查' : undefined}>
-              <ButtonContent busy={busy === 'scan'} idle="立即检查" loading="正在检查" />
+              <ButtonContent busy={busy === 'scan'} idle="立即检查" loading="三轮检测中" />
             </button>
             <button
               className="primary"
@@ -499,7 +523,7 @@ export default function App() {
           {page === 'overview' && (
             <OverviewPage status={status} settings={settings} scan={scan} routing={routing} />
           )}
-          {page === 'models' && <ModelsPage scan={scan} />}
+          {page === 'models' && <ModelsPage scan={scan} settings={settings} />}
           {page === 'history' && <HistoryPage runs={runs} />}
           {page === 'settings' && (
             <SettingsPage
@@ -694,18 +718,56 @@ function RoutingPoolCard({ routing, enabledStatus }: { routing: RoutingPoolStatu
   )
 }
 
-function ModelsPage({ scan }: { scan: Scan | null }) {
+function ModelsPage({ scan, settings }: { scan: Scan | null; settings: Settings }) {
+  const selected = scan?.selected || []
   return (
-    <div className="card">
-      <div className="section-head">
+    <>
+      <div className="health-overview card">
         <div>
-          <h2>候选模型</h2>
-          <p>{scan ? `扫描 ${scan.total_models} 个模型，符合免费基础条件 ${scan.free_models} 个` : '尚未执行扫描'}</p>
+          <p className="eyebrow">MODEL HEALTH ENGINE</p>
+          <h2>模型健康检测</h2>
+          <p>R1 保留能力最强且过线的模型；R2 / R3 从其余合格模型中优先选择健康度更高的作为故障转移兜底。</p>
+        </div>
+        <div className="health-rule-grid">
+          <div><span>每轮检测</span><strong>{Math.max(3, settings.health_check_attempts)} 次</strong></div>
+          <div><span>轮次间隔</span><strong>{settings.health_check_interval_seconds} 秒</strong></div>
+          <div><span>最低成功率</span><strong>{(settings.health_min_success_rate * 100).toFixed(0)}%</strong></div>
+          <div><span>上次完整检测</span><strong>{fmt(scan?.scanned_at)}</strong></div>
         </div>
       </div>
-      {scan?.warning && <div className="warning">{scan.warning}</div>}
-      {scan ? <ModelTable models={scan.ranked_candidates} /> : <div className="empty">点击“立即检查”生成候选模型。</div>}
-    </div>
+
+      {!!selected.length && (
+        <div className="grid3 health-role-grid">
+          {[0, 1, 2].map((index) => {
+            const model = selected[index]
+            return (
+              <div className="card health-role-card" key={index}>
+                <div className="role-label">{index === 0 ? 'R1 · 主力最强模型' : `R${index + 1} · 高健康兜底`}</div>
+                <h3>{model?.name || '等待检测'}</h3>
+                <code>{model?.id || '—'}</code>
+                {model && (
+                  <div className="role-health">
+                    <Badge tone={healthTone(model.health_success_rate)}>{healthPct(model.health_success_rate)}</Badge>
+                    <span>能力排名 #{model.rank} · {model.health_successes}/{model.health_attempts} 成功 · Intelligence {metric(model.intelligence_index)}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="section-head">
+          <div>
+            <h2>候选模型</h2>
+            <p>{scan ? `扫描 ${scan.total_models} 个模型，符合免费基础条件 ${scan.free_models} 个；候选按能力排名保持原顺序` : '尚未执行扫描'}</p>
+          </div>
+        </div>
+        {scan?.warning && <div className="warning">{scan.warning}</div>}
+        {scan ? <ModelTable models={scan.ranked_candidates} /> : <div className="empty">点击“立即检查”后会执行至少 3 轮真实调用检测，默认总间隔约 2 分钟。</div>}
+      </div>
+    </>
   )
 }
 
@@ -1012,7 +1074,7 @@ function SettingsPage({
           <div>
             <p className="eyebrow">SELECTION</p>
             <h2>模型规则</h2>
-            <p>控制候选池、上下文长度和排序策略。</p>
+            <p>R1 由能力排名决定；R2/R3 在其余合格模型中优先选择更健康的兜底。</p>
           </div>
           {rulesDirty ? <Badge tone="warn">有未保存更改</Badge> : <Badge>无更改</Badge>}
         </div>
@@ -1036,6 +1098,36 @@ function SettingsPage({
               <option value="weighted">综合评分</option>
             </select>
           </label>
+        </div>
+        <div className="health-settings-block">
+          <div className="settings-card-head compact-settings-head">
+            <div>
+              <h3>健康检测规则</h3>
+              <p>默认三轮真实调用，间隔 60 秒；成功率达到门槛即可保留原能力排名。</p>
+            </div>
+            <Badge tone="ok">能力优先</Badge>
+          </div>
+          <div className="form-grid">
+            <label>
+              每个模型检测次数
+              <input type="number" min={3} value={settings.health_check_attempts} onChange={(event) => set('health_check_attempts', Math.max(3, +event.target.value))} />
+              <small>最少 3 次。</small>
+            </label>
+            <label>
+              每轮间隔（秒）
+              <input type="number" min={60} value={settings.health_check_interval_seconds} onChange={(event) => set('health_check_interval_seconds', Math.max(60, +event.target.value))} />
+              <small>推荐 60 秒，用于跨时间验证偶发抖动。</small>
+            </label>
+            <label>
+              最低成功率（%）
+              <input type="number" min={1} max={100} step={1} value={Math.round(settings.health_min_success_rate * 100)} onChange={(event) => set('health_min_success_rate', Math.min(1, Math.max(0.01, +event.target.value / 100)))} />
+              <small>默认 30%；3 次成功 1 次即 33.3%，可以入选。</small>
+            </label>
+            <div className="health-policy-note">
+              <strong>选择策略</strong>
+              <span>R1 永远取能力排名最高且达到门槛的模型；R2/R3 在其余合格模型中先看健康率，再看能力排名。这样主力不因偶发抖动被放弃，同时备用更可靠。</span>
+            </div>
+          </div>
         </div>
         <label>
           排除模型，每行一个
