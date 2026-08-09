@@ -17,6 +17,16 @@ pub enum AppError {
 impl AppError {
     pub fn bad(message: impl Into<String>) -> Self { Self::BadRequest(message.into()) }
     pub fn conflict(message: impl Into<String>) -> Self { Self::Conflict(message.into()) }
+    pub fn unauthorized(message: impl Into<String>) -> Self { Self::Unauthorized(message.into()) }
+
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::BadRequest(_) => "configuration_or_api",
+            Self::Conflict(_) => "safety_conflict",
+            Self::Unauthorized(_) => "permission",
+            Self::Internal(_) => "network_or_internal",
+        }
+    }
 }
 
 impl IntoResponse for AppError {

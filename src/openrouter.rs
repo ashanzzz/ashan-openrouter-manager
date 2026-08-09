@@ -17,6 +17,7 @@ impl OpenRouterClient {
         let response = self.http.get(format!("{}/models", self.base)).bearer_auth(key).send().await?;
         let status = response.status();
         let text = response.text().await?;
+        if status.as_u16() == 401 || status.as_u16() == 403 { return Err(AppError::unauthorized(format!("OpenRouter 权限失败: HTTP {status}: {text}"))); }
         if !status.is_success() { return Err(AppError::bad(format!("OpenRouter models failed: {status} {text}"))); }
         Ok(serde_json::from_str::<ModelsResponse>(&text)?.data)
     }
@@ -27,6 +28,7 @@ impl OpenRouterClient {
             .bearer_auth(key).send().await?;
         let status = response.status();
         let text = response.text().await?;
+        if status.as_u16() == 401 || status.as_u16() == 403 { return Err(AppError::unauthorized(format!("OpenRouter Benchmark 权限失败: HTTP {status}: {text}"))); }
         if !status.is_success() { return Err(AppError::bad(format!("OpenRouter benchmarks failed: {status} {text}"))); }
         Ok(serde_json::from_str::<BenchmarksResponse>(&text)?.data)
     }
@@ -43,6 +45,7 @@ impl OpenRouterClient {
             .send().await?;
         let status = response.status();
         let value: serde_json::Value = response.json().await.unwrap_or_else(|_| json!({}));
+        if status.as_u16() == 401 || status.as_u16() == 403 { return Err(AppError::unauthorized(format!("{model}: OpenRouter 权限失败 HTTP {status}: {value}"))); }
         if !status.is_success() { return Err(AppError::bad(format!("{model}: OpenRouter preflight HTTP {status}: {value}"))); }
         if value.get("choices").and_then(|v| v.as_array()).map(|v| v.is_empty()).unwrap_or(true) {
             return Err(AppError::bad(format!("{model}: preflight returned no choices")));

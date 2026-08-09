@@ -173,6 +173,31 @@ pub struct SyncRun {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncLogEntry {
+    pub run_id: String,
+    pub seq: i64,
+    pub timestamp: String,
+    pub level: String,
+    pub stage: String,
+    pub category: String,
+    pub message: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncProgress {
+    pub run: SyncRun,
+    pub logs: Vec<SyncLogEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncStartResponse {
+    pub ok: bool,
+    pub run_id: String,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerStatus {
     pub next_run_at: Option<String>,
@@ -249,6 +274,7 @@ pub struct StatusResponse {
     pub scheduler: SchedulerStatus,
     pub secrets: SecretStatus,
     pub connections: ConnectionChecks,
+    pub active_sync_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

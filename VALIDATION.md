@@ -55,13 +55,14 @@ The first live New API sync must still be tested against the exact New API build
 - TypeScript application structure was checked with TypeScript 5.8.3 using temporary React type shims; temporary shims are excluded from the release package.
 - Rust toolchain is still unavailable in this sandbox, so GitHub Actions remains the authoritative Rust/Docker build verification for this release.
 
+## v3.0.4 observability checks
 
-## v3.0.3 scheduler and manual-sync update
-
-- Added backward-compatible schedule fields using Serde defaults, so existing v3.0.2 SQLite settings continue to load.
-- Added `schedule_mode = interval | daily`, `daily_sync_time` and `schedule_timezone`.
-- Daily time is validated as `HH:MM`; timezone is validated as an IANA timezone before settings are persisted.
-- Scheduler publishes `next_run_at` plus `next_run_local` for unambiguous UI display.
-- Added unit-test cases for 6-hour interval scheduling and `00:00 Asia/Shanghai`.
-- Manual sync remains the same production-safe pipeline and now has stronger UI state/feedback.
-- Final Rust/Docker compilation should still be verified by GitHub Actions because this sandbox does not provide `cargo` or a Docker daemon.
+- `sync_run_logs` is created with `CREATE TABLE IF NOT EXISTS`, so existing AppData upgrades in place.
+- Manual sync starts asynchronously and returns a Run ID before long-running network work begins.
+- `GET /api/sync/{id}` returns the persisted run and ordered logs.
+- `GET /api/status` exposes `active_sync_run_id` so browser refresh can resume polling.
+- New API 401/403 is classified as a permission problem; OpenRouter 401/403 is classified separately.
+- Foreign channels that only share the business group are warnings; alias/mapping occupation or explicit orphaned AOM v3 identity remain blocking safety conflicts.
+- No secret plaintext is included in sync-log messages or details.
+- Frontend TypeScript structure was checked with the sandbox TypeScript 5.8.3 compiler and temporary React type shims.
+- The sandbox still has no Rust toolchain or Docker daemon; GitHub Actions remains the final `cargo build` / Docker build authority.

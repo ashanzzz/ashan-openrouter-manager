@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { api } from './api'
 import type {
   ConnectionCheck,
@@ -7,6 +7,8 @@ import type {
   Scan,
   Settings,
   Status,
+  SyncLogEntry,
+  SyncProgress,
 } from './types'
 
 type Page = 'overview' | 'models' | 'history' | 'settings'
@@ -119,6 +121,104 @@ function connectionPresentation(check: ConnectionCheck, configured: boolean) {
   return { state: 'configured', label: '已配置 · 未测试', detail: '建议执行一次连接测试' }
 }
 
+const stageLabels: Record<string, string> = {
+  configuration: '配置校验',
+  openrouter_models: 'OpenRouter 模型',
+  openrouter_benchmarks: 'Benchmark',
+  ranking: '筛选与排名',
+  preflight: '真实调用测试',
+  newapi_connection: 'New API 连接/权限',
+  newapi_conflicts: '渠道冲突检查',
+  newapi_identity: '渠道身份校验',
+  newapi_create: '渠道初始化',
+  newapi_update: '渠道更新',
+  newapi_test: '渠道测试',
+  e2e: '端到端测试',
+  rollback: '回滚',
+  complete: '完成',
+}
+
+const categoryLabels: Record<string, string> = {
+  configuration: '配置',
+  openrouter_api: 'OpenRouter API',
+  openrouter_permission: 'OpenRouter 权限',
+  newapi_api: 'New API',
+  newapi_permission: 'New API 权限',
+  safety_conflict: '安全冲突',
+  safety: '安全校验',
+  legacy_channel: '历史渠道',
+  network_or_internal: '网络/内部',
+  selection: '模型选择',
+  validation: '校验',
+  rollback_failure: '回滚失败',
+  result: '结果',
+  lifecycle: '任务',
+  no_change: '无变化',
+}
+
+function logTone(level: string) {
+  if (level === 'success') return 'ok'
+  if (level === 'warning') return 'warn'
+  if (level === 'error') return 'bad'
+  return 'muted'
+}
+
+function runStatusLabel(status: string) {
+  if (status === 'running') return '执行中'
+  if (status === 'failed') return '失败'
+  if (status === 'no_change') return '无需更新'
+  if (status === 'initialized') return '初始化完成'
+  return '已完成'
+}
+
+function SyncLogPanel({ progress, onClose, compact = false }: { progress: SyncProgress; onClose?: () => void; compact?: boolean }) {
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const running = progress.run.status === 'running'
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [progress.logs.length])
+
+  return (
+    <div className={`sync-log-panel ${compact ? 'compact' : ''}`}>
+      <div className="sync-log-head">
+        <div>
+          <div className="sync-log-title-row">
+            <strong>{running ? '实时同步日志' : '同步日志'}</strong>
+            <Badge tone={running ? 'warn' : progress.run.status === 'failed' ? 'bad' : 'ok'}>{runStatusLabel(progress.run.status)}</Badge>
+          </div>
+          <span>Run {progress.run.id.slice(0, 8)} · {progress.run.trigger === 'manual' ? '手动同步' : '定时同步'} · {fmt(progress.run.started_at)}</span>
+        </div>
+        {onClose && !running && <button className="log-close" onClick={onClose}>关闭</button>}
+      </div>
+      <div className="sync-log-stream" role="log" aria-live="polite">
+        {progress.logs.map((entry: SyncLogEntry) => (
+          <div className={`sync-log-line ${entry.level}`} key={`${entry.run_id}-${entry.seq}`}>
+            <span className="sync-log-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+            <span className={`sync-log-level ${entry.level}`} />
+            <div className="sync-log-body">
+              <div className="sync-log-meta">
+                <Badge tone={logTone(entry.level)}>{stageLabels[entry.stage] || entry.stage}</Badge>
+                <span>{categoryLabels[entry.category] || entry.category}</span>
+              </div>
+              <strong>{entry.message}</strong>
+              {entry.detail && <pre>{entry.detail}</pre>}
+            </div>
+          </div>
+        ))}
+        {!progress.logs.length && <div className="sync-log-empty"><Spinner /> 正在等待第一条日志…</div>}
+        <div ref={bottomRef} />
+      </div>
+      {progress.run.status === 'failed' && progress.run.error && (
+        <div className="sync-log-diagnosis">
+          <strong>最终错误</strong>
+          <span>{progress.run.error}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ConnectionStatus({ check, configured, compact = false }: { check: ConnectionCheck; configured: boolean; compact?: boolean }) {
   const view = connectionPresentation(check, configured)
   return (
@@ -147,6 +247,8 @@ export default function App() {
   const [busy, setBusy] = useState<BusyAction>('')
   const [toast, setToast] = useState<Toast | null>(null)
   const [loadError, setLoadError] = useState('')
+  const [activeSyncId, setActiveSyncId] = useState<string | null>(null)
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const [secrets, setSecrets] = useState<SecretDraft>({
     openrouter_api_key: '',
     newapi_admin_token: '',
@@ -172,6 +274,10 @@ export default function App() {
     setSettings(nextSettings)
     setScan(models.scan || null)
     setRuns(history.runs || [])
+    if (nextStatus.active_sync_run_id) {
+      setActiveSyncId(nextStatus.active_sync_run_id)
+      setBusy('sync')
+    }
   }
 
   const loadApplication = async () => {
@@ -193,6 +299,63 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
+  useEffect(() => {
+    if (!activeSyncId) return
+    let cancelled = false
+    let timer: number | undefined
+
+    const poll = async () => {
+      try {
+        const progress = await api.syncProgress(activeSyncId)
+        if (cancelled) return
+        setSyncProgress(progress)
+        if (progress.run.status === 'running') {
+          timer = window.setTimeout(() => void poll(), 750)
+          return
+        }
+
+        setBusy('')
+        setActiveSyncId(null)
+        const selected = progress.run.selected_models.map((model, index) => `#${index + 1} ${model}`).join(' · ')
+        if (progress.run.status === 'failed') {
+          setToast({ tone: 'error', title: '同步失败', detail: progress.run.error || '请查看实时日志定位错误阶段。' })
+        } else {
+          setToast({
+            tone: 'success',
+            title: progress.run.changed ? '同步完成' : '无需更新',
+            detail: selected || '同步任务已完成',
+          })
+        }
+        await refreshRuntime().catch(() => undefined)
+      } catch (error: any) {
+        if (cancelled) return
+        setBusy('')
+        setActiveSyncId(null)
+        setToast({ tone: 'error', title: '无法读取同步进度', detail: error.message })
+      }
+    }
+
+    void poll()
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [activeSyncId])
+
+  useEffect(() => {
+    if (activeSyncId) return
+    const timer = window.setInterval(() => {
+      void api.status().then((nextStatus) => {
+        setStatus(nextStatus)
+        if (nextStatus.active_sync_run_id) {
+          setActiveSyncId(nextStatus.active_sync_run_id)
+          setBusy('sync')
+        }
+      }).catch(() => undefined)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [activeSyncId])
+
   const runScan = async () => {
     setBusy('scan')
     try {
@@ -213,23 +376,19 @@ export default function App() {
 
   const runSync = async () => {
     setBusy('sync')
+    setToast(null)
+    setSyncProgress(null)
     try {
-      const response = await api.sync(false)
-      const selected = response.run.selected_models.map((model, index) => `#${index + 1} ${model}`).join(' · ')
-      setToast({
-        tone: 'success',
-        title: response.run.changed ? '同步完成' : '无需更新',
-        detail: response.run.changed
-          ? `已重新扫描并更新 New API：${selected}`
-          : `已重新扫描，当前 Top 3 与线上一致：${selected}`,
-      })
-      await refreshRuntime()
+      const response = await api.startSync(false)
+      setActiveSyncId(response.run_id)
+      const initial = await api.syncProgress(response.run_id).catch(() => null)
+      if (initial) setSyncProgress(initial)
     } catch (error: any) {
-      setToast({ tone: 'error', title: '同步失败', detail: error.message })
-    } finally {
       setBusy('')
+      setToast({ tone: 'error', title: '无法启动同步', detail: error.message })
     }
   }
+
 
   if (!status || !settings || !savedSettings) {
     return (
@@ -265,7 +424,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.3</span>
+            <span>Manager v3.0.4</span>
           </div>
         </div>
         <nav>
@@ -313,6 +472,11 @@ export default function App() {
         </header>
 
         {toast && <ToastBanner toast={toast} onClose={() => setToast(null)} />}
+        {syncProgress && page !== 'settings' && (
+          <div className="sync-log-global">
+            <SyncLogPanel progress={syncProgress} onClose={() => setSyncProgress(null)} />
+          </div>
+        )}
 
         <section className="content">
           {page === 'overview' && (
@@ -336,6 +500,8 @@ export default function App() {
               refreshRuntime={refreshRuntime}
               onSync={runSync}
               canSync={canSync}
+              syncProgress={syncProgress}
+              clearSyncProgress={() => setSyncProgress(null)}
             />
           )}
         </section>
@@ -439,18 +605,50 @@ function ModelsPage({ scan }: { scan: Scan | null }) {
 }
 
 function HistoryPage({ runs }: { runs: Run[] }) {
+  const [selected, setSelected] = useState<SyncProgress | null>(null)
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [logError, setLogError] = useState('')
+
+  const viewLogs = async (runId: string) => {
+    if (selected?.run.id === runId) {
+      setSelected(null)
+      return
+    }
+    setLoadingId(runId)
+    setLogError('')
+    try {
+      setSelected(await api.syncProgress(runId))
+    } catch (error: any) {
+      setLogError(error.message || '读取运行日志失败')
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
   return (
     <div className="card">
       <h2>最近 100 次运行</h2>
+      <p className="history-intro">每次同步的阶段日志都会保存在 SQLite。失败时可直接查看是配置、权限、网络、模型测试还是渠道安全校验导致。</p>
+      {logError && <div className="warning">{logError}</div>}
       <div className="runs">
         {runs.map((run) => (
-          <div className="run" key={run.id}>
-            <div>
-              <Badge tone={run.status === 'failed' ? 'bad' : run.changed ? 'ok' : 'muted'}>{run.status === 'failed' ? '失败' : run.changed ? '已更新' : '无变化'}</Badge>
-              <b>{run.trigger === 'manual' ? '手动同步' : run.trigger === 'schedule' ? '定时同步' : run.trigger}</b>
-              <span>{fmt(run.started_at)}</span>
+          <div className="run-wrap" key={run.id}>
+            <div className="run">
+              <div>
+                <Badge tone={run.status === 'running' ? 'warn' : run.status === 'failed' ? 'bad' : run.changed ? 'ok' : 'muted'}>
+                  {run.status === 'running' ? '执行中' : run.status === 'failed' ? '失败' : run.changed ? '已更新' : '无变化'}
+                </Badge>
+                <b>{run.trigger === 'manual' ? '手动同步' : run.trigger === 'schedule' ? '定时同步' : run.trigger}</b>
+                <span>{fmt(run.started_at)}</span>
+              </div>
+              <div className="run-actions">
+                <p>{run.error || run.selected_models.join(' · ') || (run.status === 'running' ? '同步正在进行' : '没有模型变化')}</p>
+                <button onClick={() => void viewLogs(run.id)} disabled={loadingId === run.id}>
+                  {loadingId === run.id ? '读取中…' : selected?.run.id === run.id ? '收起日志' : '查看日志'}
+                </button>
+              </div>
             </div>
-            <p>{run.error || run.selected_models.join(' · ') || '没有模型变化'}</p>
+            {selected?.run.id === run.id && <SyncLogPanel progress={selected} compact onClose={() => setSelected(null)} />}
           </div>
         ))}
         {!runs.length && <div className="empty">暂无运行记录。</div>}
@@ -474,6 +672,8 @@ function SettingsPage({
   refreshRuntime,
   onSync,
   canSync,
+  syncProgress,
+  clearSyncProgress,
 }: {
   settings: Settings
   savedSettings: Settings
@@ -489,6 +689,8 @@ function SettingsPage({
   refreshRuntime: () => Promise<void>
   onSync: () => Promise<void>
   canSync: boolean
+  syncProgress: SyncProgress | null
+  clearSyncProgress: () => void
 }) {
   const set = (key: keyof Settings, value: any) => setSettings((current) => (current ? { ...current, [key]: value } : current))
 
@@ -827,6 +1029,8 @@ function SettingsPage({
             <ButtonContent busy={busy === 'sync'} idle="立即同步" loading="正在扫描并同步" />
           </button>
         </div>
+
+        {syncProgress && <SyncLogPanel progress={syncProgress} onClose={clearSyncProgress} />}
 
         <div className="card-footer-actions">
           <button className="primary" onClick={saveRules} disabled={!!busy || !rulesDirty}>

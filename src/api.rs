@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     routing::{get, post, put},
     Json, Router,
 };
@@ -12,7 +12,7 @@ use crate::{
     error::AppError,
     models::{
         AppSettings, ConnectionCheck, ConnectionSaveResponse, ConnectionTestResult,
-        ConnectionUpdate, SecretStatus, SecretUpdate, StatusResponse, SyncRequest,
+        ConnectionUpdate, SecretStatus, SecretUpdate, StatusResponse, SyncRequest, SyncStartResponse, SyncProgress,
     },
     newapi::NewApiClient,
     openrouter::OpenRouterClient,
@@ -29,6 +29,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/secrets", put(save_secrets))
         .route("/api/scan", post(scan))
         .route("/api/sync", post(sync_now))
+        .route("/api/sync/start", post(sync_start))
+        .route("/api/sync/{id}", get(sync_progress))
         .route("/api/test/openrouter", post(test_openrouter))
         .route("/api/test/newapi", post(test_newapi))
         .with_state(state)
@@ -50,6 +52,7 @@ async fn status(State(state): State<AppState>) -> Result<Json<StatusResponse>, A
     let last_run = state.db.last_run().await?;
     let scheduler = state.scheduler_status.read().await.clone();
     let connections = state.db.get_connection_checks().await?;
+    let active_sync_run_id = state.db.active_sync_run_id().await?;
     let configured = secrets.openrouter_api_key
         && secrets.newapi_admin_token
         && !settings.newapi_base_url.trim().is_empty()
@@ -64,6 +67,7 @@ async fn status(State(state): State<AppState>) -> Result<Json<StatusResponse>, A
         scheduler,
         secrets,
         connections,
+        active_sync_run_id,
     }))
 }
 
@@ -257,6 +261,25 @@ async fn sync_now(
         "ok": true,
         "run": crate::sync::run(&state, "manual", req.force).await?
     })))
+}
+
+async fn sync_start(
+    State(state): State<AppState>,
+    Json(req): Json<SyncRequest>,
+) -> Result<Json<SyncStartResponse>, AppError> {
+    Ok(Json(crate::sync::start_manual(state, req.force).await?))
+}
+
+async fn sync_progress(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<SyncProgress>, AppError> {
+    let progress = state
+        .db
+        .get_sync_progress(&id)
+        .await?
+        .ok_or_else(|| AppError::bad(format!("未找到同步任务 {id}")))?;
+    Ok(Json(progress))
 }
 
 async fn decrypt_secret(state: &AppState, name: &str) -> Result<String, AppError> {

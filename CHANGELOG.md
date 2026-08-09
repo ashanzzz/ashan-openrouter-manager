@@ -1,18 +1,26 @@
 # Changelog
 
+## v3.0.4
+
+- Added persistent per-run synchronization logs stored in SQLite (`sync_run_logs`).
+- Changed manual sync UI to start a background run and poll live progress instead of blocking one HTTP request.
+- Added an inline real-time log console below **立即同步**, with stage, severity, category, timestamp, message and diagnostic detail.
+- Added history log drill-down so completed/failed runs can be inspected later.
+- Added explicit failure categories for configuration, OpenRouter permission/API, New API permission/API, network/internal errors and safety conflicts.
+- New API HTTP 401/403 errors are now reported as administrator permission/token/user-ID failures.
+- OpenRouter HTTP 401/403 errors are now reported as OpenRouter permission failures.
+- Refined foreign-channel safety detection: sharing the managed group alone is a warning, not a hard conflict. Alias occupation, alias mapping occupation, and orphaned explicit AOM v3 channels remain hard conflicts.
+- Foreign-channel diagnostics now record channel ID, name, reason and whether the finding blocks synchronization.
+- Added detailed logs for model catalog fetch, benchmark fetch, ranking, each preflight result, New API connection, identity verification, channel creation/update/test, E2E testing and rollback.
+- Existing v3.0.3 databases upgrade in place; no AppData reset is required.
+
 ## v3.0.3
 
-- Added two automatic synchronization modes: interval-based and daily fixed-time scheduling.
-- Added daily fixed-time scheduling with an explicit IANA timezone; default fixed-time draft is `00:00` in `Asia/Shanghai`.
-- Fixed-time schedules survive container restarts without drifting to “24 hours after restart”.
-- Added DST-safe local-time resolution for time zones with clock transitions.
-- Added persistent scheduler status with both UTC next-run time and the configured local-time representation.
-- Added an **立即同步** action inside the automation settings card as well as the global header.
-- Manual sync always performs a fresh catalog scan, ranking and real preflight before comparing/updating the three managed New API channels.
-- Manual scan/sync are blocked when there are unsaved connection or model-rule drafts, preventing actions from silently using stale persisted settings.
-- Improved sync feedback to show the selected Top 3 and whether New API was actually changed.
-- Improved history labels for manual vs scheduled sync and update/no-change/failure outcomes.
-- Added scheduler unit tests for interval mode and daily midnight in `Asia/Shanghai`.
+- Added two automatic synchronization modes: fixed interval and daily fixed local time.
+- Added IANA timezone-aware scheduling with `Asia/Shanghai` as the default fixed-time timezone.
+- Added persistent scheduler fields with backward-compatible defaults.
+- Added next-run display for daily schedules and preserved one-container/one-port deployment.
+- Added an immediate-sync action in the automation settings card.
 
 ## v3.0.2
 

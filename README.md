@@ -13,6 +13,24 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 7. Updates only those exact channel IDs. Unknown channels are read-only and conflicts stop the sync.
 8. Runs automatically on an internal scheduler, with manual scan/sync controls in the web UI.
 
+
+### Observable synchronization
+
+Manual synchronization is a background run with a persistent Run ID. The web UI opens a live log console directly below **立即同步** and polls the backend for progress. Every log entry is also stored in SQLite so failures can be reviewed later from **历史**.
+
+The log pipeline distinguishes:
+
+- configuration validation;
+- OpenRouter model catalog and benchmark retrieval;
+- model filtering/ranking and each real preflight result;
+- New API connection and administrator permission failures (401/403);
+- foreign-channel warnings vs hard alias/ownership conflicts;
+- exact managed-channel identity verification;
+- channel creation/update/testing;
+- E2E testing and rollback.
+
+No API key or administrator token plaintext is written to synchronization logs.
+
 ## Architecture
 
 ```text
@@ -80,23 +98,6 @@ To use another host port without changing the container port:
 HOST_PORT=18080 bash scripts/install-unraid-template.sh
 ```
 
-
-## Synchronization modes
-
-Manual **立即同步** and scheduled synchronization use the same safe pipeline: fresh OpenRouter catalog scan -> benchmark ranking -> real preflight -> Top 3 -> compare current mappings -> update only when needed -> verify/rollback on failure. Manual sync does not require automatic sync to be enabled.
-
-Automatic sync supports two modes:
-
-```text
-Interval
-  every 1 / 3 / 6 / 12 / 24 hours
-
-Daily fixed time
-  e.g. 00:00 Asia/Shanghai
-```
-
-Daily fixed-time scheduling uses an explicit IANA timezone and is independent of the Docker host timezone. Restarting the container does not turn “every day at 00:00” into “24 hours after restart”. The UI shows the exact next execution time.
-
 ## New API managed resources
 
 Default identity:
@@ -112,6 +113,18 @@ priorities:     10003, 10002, 10001
 
 The manager stores the exact three channel IDs in SQLite and verifies live ownership before every mutation. It does not delete foreign channels or change New API global retries, tokens, model ratios or group ratios.
 
+
+## Synchronization API
+
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.4 UI uses:
+
+```text
+POST /api/sync/start      -> returns run_id immediately
+GET  /api/sync/{run_id}   -> returns run status + persistent stage logs
+```
+
+A running task is also exposed as `active_sync_run_id` in `GET /api/status`, allowing the UI to reconnect to an in-progress sync after a page refresh.
+
 ## Data and secrets
 
 Persistent state is under `/data` in the container. The default Compose file maps it to `./data`; the Unraid template maps it to `/mnt/cache/appdata/ashan-openrouter-manager`.
@@ -126,7 +139,7 @@ Secrets are encrypted before SQLite storage. `APP_MASTER_KEY` is used to derive 
 | `WEBUI_PORT` | Compose only | `8080` | host-side published port; container remains `8080` |
 | `RUST_LOG` | no | `info` | tracing filter |
 
-`PORT` is intentionally **not** a user setting in v3.0.3. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
+`PORT` is intentionally **not** a user setting in v3.0.2. `DATA_DIR=/data` and `WEB_DIR=/app/web` are internal container defaults and are not exposed in the Unraid template.
 
 
 ## Connection settings UX
@@ -190,14 +203,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.3**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.4**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.3 add fixed-time scheduler and immediate sync UX"
-git tag -a v3.0.3 -m "Release v3.0.3"
+git commit -m "release: v3.0.2 fix connection settings and UX"
+git tag -a v3.0.4 -m "Release v3.0.4"
 git push origin main --tags
 ```
 

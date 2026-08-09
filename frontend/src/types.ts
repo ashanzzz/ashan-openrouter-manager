@@ -80,6 +80,29 @@ export interface Run {
   error?: string | null
 }
 
+
+export interface SyncLogEntry {
+  run_id: string
+  seq: number
+  timestamp: string
+  level: 'info' | 'success' | 'warning' | 'error' | string
+  stage: string
+  category: string
+  message: string
+  detail?: string | null
+}
+
+export interface SyncProgress {
+  run: Run
+  logs: SyncLogEntry[]
+}
+
+export interface SyncStartResponse {
+  ok: boolean
+  run_id: string
+  status: string
+}
+
 export interface ConnectionCheck {
   state: ConnectionState
   checked_at?: string | null
@@ -108,6 +131,7 @@ export interface Status {
   scheduler: { next_run_at?: string | null; next_run_local?: string | null; enabled: boolean; mode: string }
   secrets: SecretStatus
   connections: ConnectionChecks
+  active_sync_run_id?: string | null
 }
 
 export interface ConnectionUpdate {

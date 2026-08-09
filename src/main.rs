@@ -48,10 +48,11 @@ async fn main() -> anyhow::Result<()> {
     let db_path = data_dir.join("openrouter-manager.db");
     let db = Database::connect(&db_path).await?;
     db.init().await?;
+    db.recover_interrupted_runs().await?;
     db.ensure_default_settings().await?;
 
     let http = Client::builder()
-        .user_agent("ashan-openrouter-manager/3.0.3")
+        .user_agent("ashan-openrouter-manager/3.0.4")
         .timeout(std::time::Duration::from_secs(45))
         .build()?;
 

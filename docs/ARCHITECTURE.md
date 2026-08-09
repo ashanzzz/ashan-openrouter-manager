@@ -61,3 +61,12 @@ The scheduler remains an orchestration adapter only; it never contains model-sel
 - saving settings notifies the scheduler immediately so the active timer is rebuilt.
 
 Manual **立即同步** is deliberately not a shortcut around validation: it always calls the normal sync pipeline, which performs a fresh OpenRouter scan, benchmark ranking, real preflight, Top-3 comparison and safe New API update/rollback.
+
+
+## Observable sync boundary (v3.0.4)
+
+Manual sync is split into **start** and **progress** operations. `POST /api/sync/start` acquires the global sync lock, persists a `running` SyncRun, and spawns the workflow. The UI polls `GET /api/sync/{id}`.
+
+`sync_run_logs` is append-only per run and records `level`, `stage`, `category`, `message`, and optional `detail`. The same entries power the live console and history drill-down. This keeps UI diagnostics independent of process stdout while preserving the existing single-container architecture.
+
+Foreign-channel inspection distinguishes hard alias/ownership conflicts from legacy/shared-group warnings. Only hard conflicts stop mutation.

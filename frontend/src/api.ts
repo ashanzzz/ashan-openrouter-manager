@@ -6,6 +6,8 @@ import type {
   Scan,
   Settings,
   Status,
+  SyncProgress,
+  SyncStartResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -54,6 +56,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ force }),
     }),
+  startSync: (force = false) =>
+    request<SyncStartResponse>('/api/sync/start', {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    }),
+  syncProgress: (runId: string) => request<SyncProgress>(`/api/sync/${encodeURIComponent(runId)}`),
   testOpenRouter: () =>
     request<ConnectionTestResult>('/api/test/openrouter', { method: 'POST', body: '{}' }),
   testNewApi: () =>
