@@ -465,7 +465,7 @@ export default function App() {
           <div className="logo">A</div>
           <div>
             <b>Ashan OpenRouter</b>
-            <span>Manager v3.0.9</span>
+            <span>Manager v3.0.10</span>
           </div>
         </div>
         <nav>
@@ -639,6 +639,7 @@ function routeModeLabel(mode: string) {
     case 'manual_only': return '仅手动池'
     case 'managed_only': return '仅 AOM 自动池'
     case 'no_enabled_channels': return '暂无启用渠道'
+    case 'managed_group_mismatch': return '路由分组待修复'
     default: return '尚未读取'
   }
 }
@@ -651,7 +652,7 @@ function RoutingChannelRow({ channel, enabledStatus, managed }: { channel: Routi
         <span className={`route-owner-dot ${managed ? 'managed' : 'manual'}`} />
         <div>
           <strong>{channel.name || `Channel ${channel.id}`}</strong>
-          <span>ID {channel.id} · priority {channel.priority} · weight {channel.weight}</span>
+          <span>ID {channel.id} · priority {channel.priority} · weight {channel.weight} · group {channel.group || '—'}</span>
         </div>
       </div>
       <div className="route-channel-meta">
@@ -1246,6 +1247,24 @@ function SettingsPage({
           <label>
             受管分组
             <input value={settings.managed_group} onChange={(event) => set('managed_group', event.target.value)} disabled={managedLocked} />
+            <small>只用于 AOM 渠道身份识别。已有受管渠道后保持锁定。</small>
+          </label>
+          <label>
+            实际路由分组
+            <input
+              value={(settings.routing_groups || []).join(', ')}
+              onChange={(event) =>
+                set(
+                  'routing_groups',
+                  event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder="default"
+            />
+            <small>默认 default。同步时会把 R1/R2/R3 同时加入受管分组和这些请求分组，可用逗号填写多个。</small>
           </label>
           <label>
             受管标签
@@ -1256,7 +1275,7 @@ function SettingsPage({
             <input value={settings.channel_name_prefix} onChange={(event) => set('channel_name_prefix', event.target.value)} disabled={managedLocked} />
           </label>
         </div>
-        <p className="muted">首次创建受管渠道后，这些身份字段会在界面和后端同时锁定。</p>
+        <p className="muted">统一模型名、受管分组、标签和前缀属于身份字段，首次创建后锁定。实际路由分组可随时修改，并在下一次同步时自动补齐到现有 R1/R2/R3。</p>
       </details>
     </div>
   )

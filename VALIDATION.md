@@ -117,3 +117,22 @@ The first live New API sync must still be tested against the exact New API build
 - Health-check round futures own model IDs and request state before `.await`; no candidate iterator borrow is carried through the request loop.
 - Scheduler uses owned Notify futures and is polled concurrently with Axum from `main` rather than being passed to `tokio::spawn`.
 - Frontend/health-selection behavior is unchanged from the finalized v3.0.8 policy.
+
+## v3.0.10 routing-group / failover redesign
+
+Validation focus:
+
+- Added `routing_groups` with a backward-compatible default of `default`.
+- Kept `managed_group` as the AOM ownership marker; production channel groups are the normalized union of ownership + routing groups.
+- Existing registered channels are reconciled before the Top-3 no-change shortcut, so a v3.0.9 R1/R2/R3 set can be repaired without changing models or channel IDs.
+- Routing reconciliation reuses the existing exact-ID ownership checks and managed-channel update path; foreign channels remain read-only.
+- AOM does not add a second provider/model fallback loop and does not mutate New API's global retry count. Failover remains in New API, where the same requested alias can advance across the distinct channel priorities.
+- Added regression tests for ownership-group preservation, default routing-group fallback, normalization and deduplication.
+- Frontend TypeScript/TSX syntax transpilation passed for all frontend entry/source files in the delivery environment.
+- `frontend/package.json` parses successfully and `git diff --check` passes.
+
+Build-environment limitation for this delivery session:
+
+- The artifact runtime does not include Rust/Cargo.
+- The recovered v3.0.9 Git archive intentionally does not contain `frontend/node_modules`, and the runtime cannot fetch missing npm packages from the public registry.
+- Therefore full `cargo test` and `npm build` must be performed by the repository CI after publication. The source tree itself was checked without claiming those unavailable local builds passed.

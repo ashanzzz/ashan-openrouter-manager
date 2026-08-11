@@ -849,18 +849,99 @@ async fn run_inner(
         )
         .await;
 
+    let mut routing_groups_changed = false;
+    for c in &managed {
+        logger
+            .log(
+                "info",
+                "newapi_update",
+                "routing",
+                format!("检查渠道 ID {} / Rank {} 的实际路由分组", c.channel_id, c.rank),
+                Some(format!(
+                    "所有权分组 {}；请求路由分组 {}",
+                    settings.managed_group,
+                    if settings.routing_groups.is_empty() {
+                        "default（默认）".to_string()
+                    } else {
+                        settings.routing_groups.join(",")
+                    }
+                )),
+            )
+            .await;
+        match client
+            .ensure_routing_groups(&settings, c, &openrouter_key)
+            .await
+        {
+            Ok(true) => {
+                routing_groups_changed = true;
+                logger
+                    .log(
+                        "success",
+                        "newapi_update",
+                        "routing",
+                        format!("渠道 ID {} 已补齐路由分组", c.channel_id),
+                        Some(format!(
+                            "现在可同时通过所有权分组 {} 和请求分组 {} 参与 New API 路由",
+                            settings.managed_group,
+                            if settings.routing_groups.is_empty() {
+                                "default".to_string()
+                            } else {
+                                settings.routing_groups.join(",")
+                            }
+                        )),
+                    )
+                    .await;
+            }
+            Ok(false) => {
+                logger
+                    .log(
+                        "success",
+                        "newapi_update",
+                        "routing",
+                        format!("渠道 ID {} 路由分组已正确", c.channel_id),
+                        None,
+                    )
+                    .await;
+            }
+            Err(error) => {
+                logger.error("newapi_update", &error).await;
+                return Err(error);
+            }
+        }
+    }
+
     let current: Vec<String> = managed.iter().map(|c| c.model_id.clone()).collect();
     if current == selected_ids && !force {
         logger
             .log(
                 "success",
                 "complete",
-                "no_change",
-                "当前 Top 3 与 New API 已登记模型完全一致，无需写入",
-                Some(current.join(" | ")),
+                if routing_groups_changed { "result" } else { "no_change" },
+                if routing_groups_changed {
+                    "当前 Top 3 未变化，但已修复 AOM 渠道路由分组"
+                } else {
+                    "当前 Top 3 与 New API 已登记模型和路由分组完全一致，无需写入"
+                },
+                Some(if routing_groups_changed {
+                    format!(
+                        "Top 3 保持 {}；路由分组已补齐为所有权分组 + {}",
+                        current.join(" | "),
+                        if settings.routing_groups.is_empty() {
+                            "default".to_string()
+                        } else {
+                            settings.routing_groups.join(",")
+                        }
+                    )
+                } else {
+                    current.join(" | ")
+                }),
             )
             .await;
-        return Ok((false, selected_ids, "no_change".into()));
+        return Ok((
+            routing_groups_changed,
+            selected_ids,
+            if routing_groups_changed { "routing_updated".into() } else { "no_change".into() },
+        ));
     }
 
     let previous = managed.clone();

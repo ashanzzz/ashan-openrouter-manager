@@ -84,6 +84,20 @@ The public alias is deliberately decoupled from resource ownership. Multiple New
 This keeps New API routing concerns (alias, priority, weight) separate from AOM ownership concerns (exact ID + identity verification).
 
 
+## Ownership group vs request-routing groups (v3.0.10)
+
+AOM now models two different group concepts explicitly:
+
+- `managed_group` is the immutable ownership marker used during exact-ID identity verification.
+- `routing_groups` is the configurable list of New API request groups that must be able to select R1/R2/R3. It defaults to `default`.
+
+The effective New API channel `group` value is the normalized union of both sets. For example, an AOM ownership group of `ashan-openrouter-free` with the default request group becomes `ashan-openrouter-free,default`.
+
+Every sync reconciles this group union before the Top-3 no-change decision. This is important for upgrades: an existing channel can have the correct model mapping but still be invisible to the token that is making production requests.
+
+Failover remains a New API responsibility. AOM does not recursively retry providers or switch models itself. R1/R2/R3 are separate channels that expose the same alias with distinct priorities and different model mappings, so New API's normal channel retry advances through those priority levels.
+
+
 ## New API adapter schema boundary (v3.0.6)
 
 Business settings remain typed for AOM semantics (`auto_ban: bool`). The New API adapter owns wire-format compatibility and serializes `auto_ban` as integer `1`/`0`, matching the current New API `Channel` schema. This prevents New API-specific transport details from leaking into the application settings model.

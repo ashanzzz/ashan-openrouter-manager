@@ -203,14 +203,16 @@ impl NewApiClient {
     ) -> Result<ManagedChannel, AppError> {
         let name = format!("{} R{}", settings.channel_name_prefix, rank);
         let priority = settings.priority_base - (rank - 1) * settings.priority_step;
+        let groups = desired_channel_groups(settings);
+        let group = groups.join(",");
         let channel = json!({
             "name": name,
             "type": settings.channel_type,
             "key": key,
             "base_url": settings.openrouter_upstream_base.trim_end_matches('/'),
             "models": settings.alias_model,
-            "groups": [settings.managed_group],
-            "group": settings.managed_group,
+            "groups": groups,
+            "group": group,
             "priority": priority,
             "weight": settings.channel_weight,
             "status": settings.disabled_status,
@@ -332,6 +334,8 @@ impl NewApiClient {
         new_model: &str,
     ) -> Result<(), AppError> {
         self.assert_identity(settings, registered).await?;
+        let groups = desired_channel_groups(settings);
+        let group = groups.join(",");
         let patch = json!({
             "id": registered.channel_id,
             "key": key,
@@ -341,8 +345,8 @@ impl NewApiClient {
             "weight": settings.channel_weight,
             "auto_ban": newapi_auto_ban(settings.auto_ban),
             "tag": settings.managed_tag,
-            "group": settings.managed_group,
-            "groups": [settings.managed_group],
+            "group": group,
+            "groups": groups,
             "remark": format!("{};rank={}",OWNER_ID,registered.rank),
         });
         self.json_request(
@@ -354,6 +358,42 @@ impl NewApiClient {
         .await?;
         self.assert_model(settings, registered, new_model).await?;
         Ok(())
+    }
+
+    /// Keep the AOM ownership group and the actual request-routing groups separate.
+    /// Existing v3.0.9 channels only had `managed_group`, which meant a `default`
+    /// token could not see them. This reconciliation is intentionally independent
+    /// from model changes so an already-correct Top 3 is migrated on the next sync.
+    pub async fn ensure_routing_groups(
+        &self,
+        settings: &AppSettings,
+        registered: &ManagedChannel,
+        key: &str,
+    ) -> Result<bool, AppError> {
+        let live = self.assert_identity(settings, registered).await?;
+        let current = normalized_groups(channel_groups(&live));
+        let desired = desired_channel_groups(settings);
+        if current == desired {
+            return Ok(false);
+        }
+
+        // Reuse the fully-specified managed-channel update path instead of relying
+        // on partial-PUT semantics. The model mapping is intentionally unchanged.
+        self.update_model(settings, registered, key, &registered.model_id)
+            .await?;
+
+        let updated = self.assert_identity(settings, registered).await?;
+        let actual = normalized_groups(channel_groups(&updated));
+        let expected = desired_channel_groups(settings);
+        if actual != expected {
+            return Err(AppError::conflict(format!(
+                "渠道 {} 路由分组验证失败；期望 {}，实际 {}",
+                registered.channel_id,
+                expected.join(","),
+                actual.join(",")
+            )));
+        }
+        Ok(true)
     }
 
     pub async fn delete_exact(
@@ -577,16 +617,29 @@ fn classify_routing_pool(
         .filter(|c| c.status == settings.enabled_status)
         .map(|c| c.priority)
         .max();
-    let route_mode = match (highest_manual_priority, highest_managed_priority) {
-        (Some(m), Some(a)) if m > a => "manual_first",
-        (Some(m), Some(a)) if a > m => "managed_first",
-        (Some(_), Some(_)) => "mixed_same_priority",
-        (Some(_), None) => "manual_only",
-        (None, Some(_)) => "managed_only",
-        (None, None) => "no_enabled_channels",
-    }
-    .to_string();
+    let required_routing_groups = configured_routing_groups(settings);
+    let managed_group_mismatch = !managed_channels.is_empty()
+        && managed_channels.iter().any(|channel| {
+            let actual = normalized_groups(vec![channel.group.clone()]);
+            required_routing_groups
+                .iter()
+                .any(|required| !actual.iter().any(|group| group == required))
+        });
+    let route_mode = if managed_group_mismatch {
+        "managed_group_mismatch".to_string()
+    } else {
+        match (highest_manual_priority, highest_managed_priority) {
+            (Some(m), Some(a)) if m > a => "manual_first",
+            (Some(m), Some(a)) if a > m => "managed_first",
+            (Some(_), Some(_)) => "mixed_same_priority",
+            (Some(_), None) => "manual_only",
+            (None, Some(_)) => "managed_only",
+            (None, None) => "no_enabled_channels",
+        }
+        .to_string()
+    };
     let message = match route_mode.as_str() {
+        "managed_group_mismatch" => "AOM 受管渠道尚未加入全部实际请求分组；下一次同步会先补齐分组，再判断 Top 3 是否需要更新",
         "manual_first" => "当前最高优先级来自手动渠道；AOM 自动池作为较低优先级补充/备用",
         "managed_first" => "当前最高优先级来自 AOM 自动池；手动渠道仍保留并可作为较低优先级补充/备用",
         "mixed_same_priority" => "手动池与 AOM 自动池存在相同最高优先级；New API 将在同优先级渠道中结合 weight 进行分配",
@@ -655,6 +708,35 @@ fn channel_groups(v: &Value) -> Vec<String> {
     out
 }
 
+fn normalized_groups(groups: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in groups {
+        for item in raw.split(',') {
+            let item = item.trim();
+            if !item.is_empty() && !out.iter().any(|existing| existing == item) {
+                out.push(item.to_string());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn configured_routing_groups(settings: &AppSettings) -> Vec<String> {
+    let groups = normalized_groups(settings.routing_groups.clone());
+    if groups.is_empty() {
+        vec!["default".into()]
+    } else {
+        groups
+    }
+}
+
+fn desired_channel_groups(settings: &AppSettings) -> Vec<String> {
+    let mut groups = vec![settings.managed_group.clone()];
+    groups.extend(configured_routing_groups(settings));
+    normalized_groups(groups)
+}
+
 fn parse_mapping(v: &Value) -> std::collections::HashMap<String, String> {
     let raw = v.get("model_mapping");
     match raw {
@@ -706,6 +788,42 @@ mod tests {
     fn auto_ban_is_encoded_as_newapi_integer() {
         assert_eq!(newapi_auto_ban(true), 1);
         assert_eq!(newapi_auto_ban(false), 0);
+    }
+
+    #[test]
+    fn desired_groups_keep_owner_group_and_add_default_routing_group() {
+        let mut settings = AppSettings::default();
+        settings.managed_group = "ashan-openrouter-free".into();
+        settings.routing_groups = vec!["default".into()];
+        assert_eq!(
+            desired_channel_groups(&settings),
+            vec!["ashan-openrouter-free".to_string(), "default".to_string()]
+        );
+    }
+
+    #[test]
+    fn empty_routing_groups_still_use_default() {
+        let mut settings = AppSettings::default();
+        settings.managed_group = "ashan-openrouter-free".into();
+        settings.routing_groups = vec![];
+        assert_eq!(
+            desired_channel_groups(&settings),
+            vec!["ashan-openrouter-free".to_string(), "default".to_string()]
+        );
+    }
+
+    #[test]
+    fn desired_groups_are_trimmed_and_deduplicated() {
+        let mut settings = AppSettings::default();
+        settings.managed_group = "ashan-openrouter-free".into();
+        settings.routing_groups = vec![
+            "default".into(),
+            " default,ashan-openrouter-free ".into(),
+        ];
+        assert_eq!(
+            desired_channel_groups(&settings),
+            vec!["ashan-openrouter-free".to_string(), "default".to_string()]
+        );
     }
 
     #[test]

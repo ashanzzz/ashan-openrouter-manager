@@ -9,6 +9,7 @@ export interface Settings {
   newapi_admin_user_id: string
   alias_model: string
   managed_group: string
+  routing_groups: string[]
   managed_tag: string
   channel_name_prefix: string
   min_context_length: number

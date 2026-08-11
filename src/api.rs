@@ -135,6 +135,7 @@ async fn save_settings(
     let old = state.db.get_settings().await?;
     settings.newapi_base_url = old.newapi_base_url;
     settings.newapi_admin_user_id = old.newapi_admin_user_id;
+    settings.routing_groups = normalize_routing_groups(settings.routing_groups);
 
     if !state.db.list_managed_channels().await?.is_empty() {
         let protected_changed = old.openrouter_upstream_base != settings.openrouter_upstream_base
@@ -158,6 +159,22 @@ async fn save_settings(
     }
     state.scheduler_notify.notify_one();
     Ok(Json(json!({"ok": true, "message": "设置已保存", "settings": settings})))
+}
+
+fn normalize_routing_groups(groups: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for raw in groups {
+        for group in raw.split(',') {
+            let group = group.trim();
+            if !group.is_empty() && !normalized.iter().any(|item| item == group) {
+                normalized.push(group.to_string());
+            }
+        }
+    }
+    if normalized.is_empty() {
+        normalized.push("default".into());
+    }
+    normalized
 }
 
 async fn save_connections(

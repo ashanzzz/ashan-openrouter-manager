@@ -101,7 +101,7 @@ HOST_PORT=18080 bash scripts/install-unraid-template.sh
 
 ## Health-gate model selection policy
 
-AOM v3.0.9 treats model health as a gate rather than a ranking signal. The selection policy is:
+AOM v3.0.10 treats model health as a gate rather than a ranking signal. The selection policy is:
 
 ```text
 Capability ranking (Intelligence -> Coding -> Agentic)
@@ -127,15 +127,35 @@ Model health attempts are stored in SQLite (`model_health_checks`) and the lates
 Default identity:
 
 ```text
-alias:          ashan-ai-model
-group:          wm-ashan-openrouter-free
-tag:            ashan-openrouter-manager-v3
-channel prefix: [AOM3]
-channels:       [AOM3] R1, [AOM3] R2, [AOM3] R3
-priorities:     10003, 10002, 10001
+alias:             ashan-ai-model
+ownership group:   wm-ashan-openrouter-free
+routing groups:    default
+effective groups:  wm-ashan-openrouter-free,default
+tag:               ashan-openrouter-manager-v3
+channel prefix:    [AOM3]
+channels:          [AOM3] R1, [AOM3] R2, [AOM3] R3
+priorities:        10003, 10002, 10001
 ```
 
 The manager stores the exact three channel IDs in SQLite and verifies live ownership before every mutation. It does not delete foreign channels or change New API global retries, tokens, model ratios or group ratios.
+
+`managed_group` is an ownership/identity guard. `routing_groups` controls which ordinary New API request groups can actually see R1/R2/R3. The default routing group is `default`, so a normal `default` token can use the managed Top 3 while AOM still keeps its private ownership group.
+
+Existing v3.0.9 channels are migrated in place on the next synchronization. Group reconciliation runs before the Top-3 no-change shortcut, so R1/R2/R3 receive the configured routing groups even when the selected models have not changed.
+
+### Failover policy
+
+AOM deliberately does **not** add a second application-level fallback loop. All three managed channels expose the same requested alias, `ashan-ai-model`, and map that alias to different real OpenRouter models. New API already retries failed channels and advances through distinct channel priority levels. With a manual CPA channel at priority `11000`, the managed slots at `10003`, `10002`, `10001`, and all of them in the same request group, the intended route is:
+
+```text
+CPA 11000
+  -> R1 10003
+  -> R2 10002
+  -> R3 10001
+  -> any lower-priority foreign channels, if configured
+```
+
+This avoids duplicate retry loops and keeps retry count, error classification and final failover behavior under New API's existing routing engine. AOM never changes the global New API failure-retry setting.
 
 ### Hybrid routing with manual channels
 
@@ -161,7 +181,7 @@ AOM keeps `auto_ban` as a boolean business setting internally, but the current N
 
 ## Synchronization API
 
-The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.9 UI uses:
+The legacy blocking `POST /api/sync` endpoint remains available for compatibility. The v3.0.10 UI uses:
 
 ```text
 POST /api/sync/start      -> returns run_id immediately
@@ -249,14 +269,14 @@ To publish on host port `18080`, change only the left side: `-p 18080:8080`.
 
 ## Version Management & Release Workflow
 
-We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.9**.
+We use Semantic Versioning (`vX.Y.Z`). This package is prepared as **v3.0.10**.
 
 To release:
 
 ```bash
 git add .
-git commit -m "release: v3.0.9 fix Tokio Send lifetime CI failure"
-git tag -a v3.0.9 -m "Release v3.0.9"
+git commit -m "release: v3.0.10 add production routing groups"
+git tag -a v3.0.10 -m "Release v3.0.10"
 git push origin main --tags
 ```
 

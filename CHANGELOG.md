@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.0.10
+
+- Split AOM's ownership group from its production request-routing groups.
+- Added backward-compatible `routing_groups`, defaulting to `default`.
+- New and updated R1/R2/R3 channels now use the normalized union of the AOM ownership group and configured routing groups.
+- Added an in-place routing-group reconciliation pass before the Top-3 no-change shortcut, so existing v3.0.9 channels are repaired even when the selected models are unchanged.
+- Added an editable WebUI field for actual routing groups while keeping ownership identity fields locked after channel initialization.
+- Kept failover inside New API rather than introducing a duplicate AOM retry layer. The managed channels already share `ashan-ai-model` and use priorities 10003/10002/10001, so New API's native failed-channel retry can walk R1 -> R2 -> R3 once the request group can see them.
+- Added regression tests for ownership + routing group normalization and deduplication.
+- No SQLite schema or AppData reset is required when upgrading from v3.0.9.
+
 ## v3.0.9
 
 - Fixed the Rust CI failure introduced by the multi-round health engine: background sync execution now owns `AppState`, `SyncLogger`, settings and database handles across async boundaries instead of exposing borrowed lifetimes to `tokio::spawn`.
