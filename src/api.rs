@@ -356,7 +356,7 @@ async fn test_openrouter(
 ) -> Result<Json<ConnectionTestResult>, AppError> {
     let settings = state.db.get_settings().await?;
     let key = decrypt_secret(&state, "openrouter_api_key").await?;
-    let client = OpenRouterClient::new(state.http.clone(), &settings.openrouter_api_base);
+    let client = OpenRouterClient::new(state.http.clone(), &settings);
     let started = Instant::now();
     let checked_at = Utc::now().to_rfc3339();
 

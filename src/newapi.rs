@@ -205,7 +205,8 @@ impl NewApiClient {
         let priority = settings.priority_base - (rank - 1) * settings.priority_step;
         let groups = desired_channel_groups(settings);
         let group = groups.join(",");
-        let channel = json!({
+        let headers = desired_channel_headers(settings);
+        let mut channel = json!({
             "name": name,
             "type": settings.channel_type,
             "key": key,
@@ -221,6 +222,9 @@ impl NewApiClient {
             "model_mapping": mapping_string(&settings.alias_model, &model.id),
             "remark": format!("{};rank={}", OWNER_ID, rank),
         });
+        if let Some(h) = headers {
+            channel["headers"] = json!(h);
+        }
         self.json_request(
             self.http
                 .post(format!("{}/api/channel/", self.base))
@@ -336,7 +340,8 @@ impl NewApiClient {
         self.assert_identity(settings, registered).await?;
         let groups = desired_channel_groups(settings);
         let group = groups.join(",");
-        let patch = json!({
+        let headers = desired_channel_headers(settings);
+        let mut patch = json!({
             "id": registered.channel_id,
             "key": key,
             "models": settings.alias_model,
@@ -349,6 +354,9 @@ impl NewApiClient {
             "groups": groups,
             "remark": format!("{};rank={}",OWNER_ID,registered.rank),
         });
+        if let Some(h) = headers {
+            patch["headers"] = json!(h);
+        }
         self.json_request(
             self.http
                 .put(format!("{}/api/channel/", self.base))
@@ -737,6 +745,30 @@ fn desired_channel_groups(settings: &AppSettings) -> Vec<String> {
     normalized_groups(groups)
 }
 
+pub fn desired_channel_headers(settings: &AppSettings) -> Option<String> {
+    let mut map = serde_json::Map::new();
+    if !settings.openrouter_http_referer.trim().is_empty() {
+        map.insert(
+            "HTTP-Referer".into(),
+            json!(settings.openrouter_http_referer.trim()),
+        );
+    }
+    if !settings.openrouter_x_title.trim().is_empty() {
+        map.insert("X-Title".into(), json!(settings.openrouter_x_title.trim()));
+    }
+    if !settings.openrouter_user_agent.trim().is_empty() {
+        map.insert(
+            "User-Agent".into(),
+            json!(settings.openrouter_user_agent.trim()),
+        );
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(Value::Object(map).to_string())
+    }
+}
+
 fn parse_mapping(v: &Value) -> std::collections::HashMap<String, String> {
     let raw = v.get("model_mapping");
     match raw {
@@ -846,4 +878,33 @@ mod tests {
         assert!(report.manual_channels.is_empty());
         assert_eq!(report.orphan_channels.len(), 1);
     }
+
+    #[test]
+    fn desired_channel_headers_builds_valid_json() {
+        let settings = AppSettings::default();
+        let headers_str = desired_channel_headers(&settings).expect("headers should exist");
+        let parsed: Value = serde_json::from_str(&headers_str).expect("valid json");
+        assert_eq!(
+            parsed.get("HTTP-Referer").and_then(|v| v.as_str()),
+            Some("https://github.com/NousResearch/hermes-agent")
+        );
+        assert_eq!(
+            parsed.get("X-Title").and_then(|v| v.as_str()),
+            Some("Hermes Agent")
+        );
+        assert_eq!(
+            parsed.get("User-Agent").and_then(|v| v.as_str()),
+            Some("HermesAgent/0.1.0 (NousResearch; +https://github.com/NousResearch/hermes-agent)")
+        );
+    }
+
+    #[test]
+    fn empty_channel_headers_returns_none() {
+        let mut settings = AppSettings::default();
+        settings.openrouter_http_referer = "   ".into();
+        settings.openrouter_x_title = "".into();
+        settings.openrouter_user_agent = "".into();
+        assert_eq!(desired_channel_headers(&settings), None);
+    }
 }
+

@@ -40,6 +40,9 @@ export interface Settings {
   channel_weight: number
   auto_ban: boolean
   e2e_test_enabled: boolean
+  openrouter_http_referer: string
+  openrouter_x_title: string
+  openrouter_user_agent: string
 }
 
 export interface ModelHealthAttempt {

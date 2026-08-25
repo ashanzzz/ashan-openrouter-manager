@@ -180,7 +180,7 @@ async fn log_health_event(
 pub async fn scan(state: AppState) -> Result<ScanResult, AppError> {
     let settings = state.db.get_settings().await?;
     let key = secret(state.clone(), "openrouter_api_key").await?;
-    let client = OpenRouterClient::new(state.http.clone(), &settings.openrouter_api_base);
+    let client = OpenRouterClient::new(state.http.clone(), &settings);
     let models = client.list_models(&key).await?;
     let total = models.len();
     let benchmarks = client.benchmarks(&key).await?;
@@ -362,7 +362,19 @@ async fn scan_with_logger(
         )
         .await;
 
-    let client = OpenRouterClient::new(state.http.clone(), &settings.openrouter_api_base);
+    if !settings.openrouter_x_title.trim().is_empty() || !settings.openrouter_http_referer.trim().is_empty() {
+        logger
+            .log(
+                "info",
+                "configuration",
+                "harness",
+                format!("已装载 Agent Harness 应用标识：{}", settings.openrouter_x_title),
+                Some(format!("Referer: {} | User-Agent: {}", settings.openrouter_http_referer, settings.openrouter_user_agent)),
+            )
+            .await;
+    }
+
+    let client = OpenRouterClient::new(state.http.clone(), &settings);
 
     logger
         .log(

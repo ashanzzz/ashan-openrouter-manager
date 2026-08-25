@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     db.ensure_default_settings().await?;
 
     let http = Client::builder()
-        .user_agent("ashan-openrouter-manager/3.0.10")
+        .user_agent("ashan-openrouter-manager/3.0.11")
         .timeout(std::time::Duration::from_secs(45))
         .build()?;
 

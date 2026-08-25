@@ -46,6 +46,12 @@ pub struct AppSettings {
     pub channel_weight: i64,
     pub auto_ban: bool,
     pub e2e_test_enabled: bool,
+    #[serde(default = "default_openrouter_http_referer")]
+    pub openrouter_http_referer: String,
+    #[serde(default = "default_openrouter_x_title")]
+    pub openrouter_x_title: String,
+    #[serde(default = "default_openrouter_user_agent")]
+    pub openrouter_user_agent: String,
 }
 
 impl Default for AppSettings {
@@ -88,6 +94,9 @@ impl Default for AppSettings {
             channel_weight: 100,
             auto_ban: true,
             e2e_test_enabled: false,
+            openrouter_http_referer: default_openrouter_http_referer(),
+            openrouter_x_title: default_openrouter_x_title(),
+            openrouter_user_agent: default_openrouter_user_agent(),
         }
     }
 }
@@ -110,6 +119,10 @@ fn default_routing_groups() -> Vec<String> { vec!["default".into()] }
 fn default_health_check_attempts() -> usize { 3 }
 fn default_health_check_interval_seconds() -> u64 { 60 }
 fn default_health_min_success_rate() -> f64 { 0.30 }
+fn default_openrouter_http_referer() -> String { "https://github.com/NousResearch/hermes-agent".into() }
+fn default_openrouter_x_title() -> String { "Hermes Agent".into() }
+fn default_openrouter_user_agent() -> String { "HermesAgent/0.1.0 (NousResearch; +https://github.com/NousResearch/hermes-agent)".into() }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterModel {

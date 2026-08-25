@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0.11
+
+- Added Agent Harness attribution headers (`HTTP-Referer`, `X-Title`, `User-Agent`) dynamically configurable via `AppSettings` with default presets for **NousResearch / Hermes Agent**.
+- Attached Hermes Agent attribution headers to all OpenRouter API requests (model directory fetching, benchmark lookups, and multi-round candidate health preflight checks), enabling access to models restricted to agentic harnesses (e.g. `thinkingmachines/inkling:free`).
+- Injected custom attribution `headers` JSON payload into New API channel creation (`create_channel`) and channel update (`update_model`) requests, ensuring end-user chat traffic routed through New API carries the Hermes Agent identity to OpenRouter.
+- Added Settings UI panel for Agent Harness request header customization and a one-click preset button to populate Hermes Agent configuration.
+- Added unit tests for New API channel header serialization and validation.
+- No database reset is required when upgrading from v3.0.10.
+
 ## v3.0.10
 
 - Split AOM's ownership group from its production request-routing groups.

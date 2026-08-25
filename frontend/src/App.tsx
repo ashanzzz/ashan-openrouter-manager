@@ -1238,6 +1238,52 @@ function SettingsPage({
       </div>
 
       <details className="card">
+        <summary>🤖 Agent Harness 请求头伪装 (Hermes Agent / Custom)</summary>
+        <div className="form-grid top">
+          <label>
+            X-Title (应用标题)
+            <input
+              value={settings.openrouter_x_title || ''}
+              onChange={(event) => set('openrouter_x_title', event.target.value)}
+              placeholder="Hermes Agent"
+            />
+            <small>OpenRouter 用于识别客户端应用名称与排行榜展示。</small>
+          </label>
+          <label>
+            HTTP-Referer (来源站点 URL)
+            <input
+              value={settings.openrouter_http_referer || ''}
+              onChange={(event) => set('openrouter_http_referer', event.target.value)}
+              placeholder="https://github.com/NousResearch/hermes-agent"
+            />
+            <small>OpenRouter 用于归属应用来源与防盗链验证。</small>
+          </label>
+          <label className="full">
+            User-Agent (客户端指纹)
+            <input
+              value={settings.openrouter_user_agent || ''}
+              onChange={(event) => set('openrouter_user_agent', event.target.value)}
+              placeholder="HermesAgent/0.1.0 (NousResearch; +https://github.com/NousResearch/hermes-agent)"
+            />
+            <small>HTTP 客户端指纹。AOM 探测与 New API 渠道均会自动注入上述请求头。</small>
+          </label>
+        </div>
+        <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+          <button
+            type="button"
+            className="button secondary sm"
+            onClick={() => {
+              set('openrouter_x_title', 'Hermes Agent')
+              set('openrouter_http_referer', 'https://github.com/NousResearch/hermes-agent')
+              set('openrouter_user_agent', 'HermesAgent/0.1.0 (NousResearch; +https://github.com/NousResearch/hermes-agent)')
+            }}
+          >
+            一键填入 Hermes Agent 官方预设
+          </button>
+        </div>
+      </details>
+
+      <details className="card">
         <summary>高级设置</summary>
         <div className="form-grid top">
           <label>
