@@ -97,6 +97,10 @@ Every sync reconciles this group union before the Top-3 no-change decision. This
 
 Failover remains a New API responsibility. AOM does not recursively retry providers or switch models itself. R1/R2/R3 are separate channels that expose the same alias with distinct priorities and different model mappings, so New API's normal channel retry advances through those priority levels.
 
+## Alias and real-model exposure (v3.0.12)
+
+Each managed channel exposes two model names. The stable alias is `ashan-ai-model`. The second name is the selected real OpenRouter model ID. The alias still maps to the selected real model. The real model ID can also route directly to its matching managed channel. AOM upgrades legacy alias-only channels during the next synchronization.
+
 
 ## New API adapter schema boundary (v3.0.6)
 

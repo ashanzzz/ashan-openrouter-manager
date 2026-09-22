@@ -922,27 +922,61 @@ async fn run_inner(
         }
     }
 
+    let mut model_exposure_changed = false;
+    for channel in &managed {
+        match client
+            .ensure_actual_model_exposed(&settings, channel, &openrouter_key)
+            .await
+        {
+            Ok(true) => {
+                model_exposure_changed = true;
+                logger
+                    .log(
+                        "success",
+                        "newapi_update",
+                        "newapi_api",
+                        format!("渠道 ID {} 已加入实际模型名", channel.channel_id),
+                        Some(format!(
+                            "现在同时支持统一别名 {} 和实际模型 {}",
+                            settings.alias_model, channel.model_id
+                        )),
+                    )
+                    .await;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                logger.error("newapi_update", &error).await;
+                return Err(error);
+            }
+        }
+    }
+
     let current: Vec<String> = managed.iter().map(|c| c.model_id.clone()).collect();
     if current == selected_ids && !force {
         logger
             .log(
                 "success",
                 "complete",
-                if routing_groups_changed { "result" } else { "no_change" },
-                if routing_groups_changed {
-                    "当前 Top 3 未变化，但已修复 AOM 渠道路由分组"
+                if routing_groups_changed || model_exposure_changed {
+                    "result"
                 } else {
-                    "当前 Top 3 与 New API 已登记模型和路由分组完全一致，无需写入"
+                    "no_change"
                 },
-                Some(if routing_groups_changed {
+                if routing_groups_changed || model_exposure_changed {
+                    "当前 Top 3 未变化，但已修复 AOM 受管渠道配置"
+                } else {
+                    "当前 Top 3 与 New API 已登记模型、实际模型名和路由分组完全一致，无需写入"
+                },
+                Some(if routing_groups_changed || model_exposure_changed {
                     format!(
-                        "Top 3 保持 {}；路由分组已补齐为所有权分组 + {}",
+                        "Top 3 保持 {}；路由分组：{}；实际模型名：{}",
                         current.join(" | "),
                         if settings.routing_groups.is_empty() {
                             "default".to_string()
                         } else {
                             settings.routing_groups.join(",")
-                        }
+                        },
+                        if model_exposure_changed { "是" } else { "无需更新" }
                     )
                 } else {
                     current.join(" | ")
@@ -950,9 +984,13 @@ async fn run_inner(
             )
             .await;
         return Ok((
-            routing_groups_changed,
+            routing_groups_changed || model_exposure_changed,
             selected_ids,
-            if routing_groups_changed { "routing_updated".into() } else { "no_change".into() },
+            if routing_groups_changed || model_exposure_changed {
+                "configuration_updated".into()
+            } else {
+                "no_change".into()
+            },
         ));
     }
 

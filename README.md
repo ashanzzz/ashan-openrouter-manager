@@ -10,7 +10,7 @@ A clean-room refactor of the original Windmill-based OpenRouter free-model manag
 4. Ranks candidates by capability, then performs multi-round OpenRouter health checks (default: 3 attempts, 60-second interval).
 5. Health is admission-only: default threshold is 30%, so 1/3 success remains eligible; every qualified model keeps its original capability rank and R1/R2/R3 are simply the top three qualified ranks.
 6. Requires three qualified models before changing production state.
-7. Maintains exactly three registered New API channels that all expose `ashan-ai-model`.
+7. Maintains exactly three registered New API channels. Each channel exposes `ashan-ai-model` and its selected real model ID.
 8. Updates only those exact channel IDs. Manual New API channels may expose the same alias and remain strictly read-only.
 9. Runs automatically on an internal scheduler, with manual scan/sync controls in the web UI.
 
@@ -143,9 +143,11 @@ The manager stores the exact three channel IDs in SQLite and verifies live owner
 
 Existing v3.0.9 channels are migrated in place on the next synchronization. Group reconciliation runs before the Top-3 no-change shortcut, so R1/R2/R3 receive the configured routing groups even when the selected models have not changed.
 
+Existing alias-only channels are also upgraded on the next synchronization. Each channel then exposes `ashan-ai-model` and its selected real model ID.
+
 ### Failover policy
 
-AOM deliberately does **not** add a second application-level fallback loop. All three managed channels expose the same requested alias, `ashan-ai-model`, and map that alias to different real OpenRouter models. New API already retries failed channels and advances through distinct channel priority levels. With a manual CPA channel at priority `11000`, the managed slots at `10003`, `10002`, `10001`, and all of them in the same request group, the intended route is:
+AOM deliberately does **not** add a second application-level fallback loop. All three managed channels expose the same requested alias, `ashan-ai-model`, plus their own real model ID. They map the alias to different real OpenRouter models. New API already retries failed channels and advances through distinct channel priority levels. With a manual CPA channel at priority `11000`, the managed slots at `10003`, `10002`, `10001`, and all of them in the same request group, the intended route is:
 
 ```text
 CPA 11000

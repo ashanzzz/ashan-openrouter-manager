@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.12
+
+- New and updated AOM-managed New API channels now expose both the stable public alias (`ashan-ai-model`) and their selected real OpenRouter model ID (for example, `nvidia/nemotron-3-super-120b-a12b:free`).
+- Existing alias-only channels are upgraded in place during the next synchronization, even when the selected Top 3 has not changed.
+- Kept `ashan-ai-model` mapped to each channel's selected real model, so existing alias-based failover behavior is unchanged.
+- No SQLite schema or AppData reset is required when upgrading from v3.0.11.
+
 ## v3.0.11
 
 - Added Agent Harness attribution headers (`HTTP-Referer`, `X-Title`, `User-Agent`) dynamically configurable via `AppSettings` with default presets for **NousResearch / Hermes Agent**.

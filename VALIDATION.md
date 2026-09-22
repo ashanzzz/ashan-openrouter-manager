@@ -99,6 +99,15 @@ The first live New API sync must still be tested against the exact New API build
 - The sandbox still has no Rust toolchain/Docker daemon; GitHub Actions remains authoritative for `cargo test` and image build.
 
 
+## v3.0.12 alias and real-model exposure
+
+Validation focus:
+
+- Each new or updated managed channel lists `ashan-ai-model` first and its selected real model ID second.
+- The alias mapping still maps `ashan-ai-model` to the selected real model ID.
+- The next synchronization upgrades legacy alias-only channels even if the Top 3 does not change.
+- Regression tests cover the generated model list and legacy alias-only migration acceptance.
+
 ## v3.0.8 health-gate-only Top3 selection
 
 - Every candidate still receives at least 3 real OpenRouter checks with at least 60 seconds between rounds.

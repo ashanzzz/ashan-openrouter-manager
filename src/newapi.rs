@@ -176,8 +176,11 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
+            && models_match_expected_or_legacy(
+                &models,
+                &settings.alias_model,
+                &registered.model_id,
+            )
             && mapping
                 .get(&settings.alias_model)
                 .map(|v| v == &registered.model_id)
@@ -211,7 +214,7 @@ impl NewApiClient {
             "type": settings.channel_type,
             "key": key,
             "base_url": settings.openrouter_upstream_base.trim_end_matches('/'),
-            "models": settings.alias_model,
+            "models": desired_channel_models_string(&settings.alias_model, &model.id),
             "groups": groups,
             "group": group,
             "priority": priority,
@@ -263,8 +266,11 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
+            && models_match_expected_or_legacy(
+                &models,
+                &settings.alias_model,
+                &registered.model_id,
+            )
             && mapping
                 .get(&settings.alias_model)
                 .map(|v| v == &registered.model_id)
@@ -295,8 +301,11 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
+            && models_match_expected_or_legacy(
+                &models,
+                &settings.alias_model,
+                &registered.model_id,
+            )
             && str_field(&live, "tag") == settings.managed_tag
             && str_field(&live, "remark").contains(OWNER_ID)
             && str_field(&live, "remark").contains(&format!("rank={}", registered.rank));
@@ -315,12 +324,14 @@ impl NewApiClient {
         registered: &ManagedChannel,
         expected_model: &str,
     ) -> Result<(), AppError> {
-        let live = self.assert_identity(settings, registered).await?;
+        let live = self.get_channel(registered.channel_id).await?;
         let mapping = parse_mapping(&live);
-        if mapping
-            .get(&settings.alias_model)
-            .map(|v| v.as_str())
-            != Some(expected_model)
+        let models = channel_models(&live);
+        if !models_match_expected(&models, &settings.alias_model, expected_model)
+            || mapping
+                .get(&settings.alias_model)
+                .map(|v| v.as_str())
+                != Some(expected_model)
         {
             return Err(AppError::conflict(format!(
                 "渠道 {} 模型映射验证失败",
@@ -344,7 +355,7 @@ impl NewApiClient {
         let mut patch = json!({
             "id": registered.channel_id,
             "key": key,
-            "models": settings.alias_model,
+            "models": desired_channel_models_string(&settings.alias_model, new_model),
             "model_mapping": mapping_string(&settings.alias_model,new_model),
             "priority": registered.priority,
             "weight": settings.channel_weight,
@@ -401,6 +412,27 @@ impl NewApiClient {
                 actual.join(",")
             )));
         }
+        Ok(true)
+    }
+
+    /// Upgrade alias-only channels so callers can use the selected real model ID too.
+    pub async fn ensure_actual_model_exposed(
+        &self,
+        settings: &AppSettings,
+        registered: &ManagedChannel,
+        key: &str,
+    ) -> Result<bool, AppError> {
+        let live = self.assert_identity(settings, registered).await?;
+        if models_match_expected(
+            &channel_models(&live),
+            &settings.alias_model,
+            &registered.model_id,
+        ) {
+            return Ok(false);
+        }
+
+        self.update_model(settings, registered, key, &registered.model_id)
+            .await?;
         Ok(true)
     }
 
@@ -681,6 +713,27 @@ fn mapping_string(alias: &str, actual: &str) -> String {
     serde_json::to_string(&map).unwrap()
 }
 
+fn desired_channel_models(alias: &str, actual: &str) -> Vec<String> {
+    let mut models = vec![alias.to_string()];
+    if actual != alias {
+        models.push(actual.to_string());
+    }
+    models
+}
+
+fn desired_channel_models_string(alias: &str, actual: &str) -> String {
+    desired_channel_models(alias, actual).join(",")
+}
+
+fn models_match_expected(models: &[String], alias: &str, actual: &str) -> bool {
+    models == desired_channel_models(alias, actual)
+}
+
+fn models_match_expected_or_legacy(models: &[String], alias: &str, actual: &str) -> bool {
+    models_match_expected(models, alias, actual)
+        || (actual != alias && models == [alias.to_string()])
+}
+
 fn str_field(v: &Value, key: &str) -> String {
     v.get(key)
         .and_then(|x| x.as_str())
@@ -896,6 +949,32 @@ mod tests {
             parsed.get("User-Agent").and_then(|v| v.as_str()),
             Some("HermesAgent/0.1.0 (NousResearch; +https://github.com/NousResearch/hermes-agent)")
         );
+    }
+
+    #[test]
+    fn managed_channel_exposes_alias_and_actual_model() {
+        assert_eq!(
+            desired_channel_models_string(
+                "ashan-ai-model",
+                "nvidia/nemotron-3-super-120b-a12b:free",
+            ),
+            "ashan-ai-model,nvidia/nemotron-3-super-120b-a12b:free"
+        );
+    }
+
+    #[test]
+    fn legacy_alias_only_models_remain_valid_for_migration() {
+        let legacy_models = vec!["ashan-ai-model".to_string()];
+        assert!(models_match_expected_or_legacy(
+            &legacy_models,
+            "ashan-ai-model",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        ));
+        assert!(!models_match_expected(
+            &legacy_models,
+            "ashan-ai-model",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        ));
     }
 
     #[test]
