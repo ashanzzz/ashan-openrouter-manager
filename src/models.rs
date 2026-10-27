@@ -7,6 +7,8 @@ pub struct AppSettings {
     pub newapi_base_url: String,
     pub newapi_admin_user_id: String,
     pub alias_model: String,
+    #[serde(default = "default_expose_upstream_model")]
+    pub expose_upstream_model: bool,
     pub managed_group: String,
     #[serde(default = "default_routing_groups")]
     pub routing_groups: Vec<String>,
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             newapi_base_url: String::new(),
             newapi_admin_user_id: "1".into(),
             alias_model: "ashan-ai-model".into(),
+            expose_upstream_model: default_expose_upstream_model(),
             managed_group: "wm-ashan-openrouter-free".into(),
             routing_groups: default_routing_groups(),
             managed_tag: "ashan-openrouter-manager-v3".into(),
@@ -115,6 +118,7 @@ pub enum ScheduleMode {
 
 fn default_daily_sync_time() -> String { "00:00".into() }
 fn default_schedule_timezone() -> String { "Asia/Shanghai".into() }
+fn default_expose_upstream_model() -> bool { true }
 fn default_routing_groups() -> Vec<String> { vec!["default".into()] }
 fn default_health_check_attempts() -> usize { 3 }
 fn default_health_check_interval_seconds() -> u64 { 60 }

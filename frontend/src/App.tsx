@@ -1290,6 +1290,20 @@ function SettingsPage({
             统一模型名
             <input value={settings.alias_model} onChange={(event) => set('alias_model', event.target.value)} disabled={managedLocked} />
           </label>
+          <div className="toggle" style={{ gridColumn: '1 / -1', margin: '4px 0 10px 0' }}>
+            <input
+              type="checkbox"
+              id="expose_upstream_model"
+              checked={!!settings.expose_upstream_model}
+              onChange={(event) => set('expose_upstream_model', event.target.checked)}
+            />
+            <label htmlFor="expose_upstream_model" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span>保留并添加上游原始模型名到渠道（便于单模型定向测试）</span>
+              <small style={{ color: 'var(--muted, #888)' }}>
+                开启后，受管渠道在 New API 中除统一别名（{settings.alias_model}）外，还将同时注册真实上游模型名（如 nvidia/nemotron-3.5-super-vl:free），方便您直接通过原名进行测试。
+              </small>
+            </label>
+          </div>
           <label>
             受管分组
             <input value={settings.managed_group} onChange={(event) => set('managed_group', event.target.value)} disabled={managedLocked} />

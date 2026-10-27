@@ -178,7 +178,7 @@ impl NewApiClient {
                 .any(|g| g == &settings.managed_group)
             && models_match_expected_or_legacy(
                 &models,
-                &settings.alias_model,
+                settings,
                 &registered.model_id,
             )
             && mapping
@@ -214,7 +214,7 @@ impl NewApiClient {
             "type": settings.channel_type,
             "key": key,
             "base_url": settings.openrouter_upstream_base.trim_end_matches('/'),
-            "models": desired_channel_models_string(&settings.alias_model, &model.id),
+            "models": desired_channel_models_string(settings, &model.id),
             "groups": groups,
             "group": group,
             "priority": priority,
@@ -268,7 +268,7 @@ impl NewApiClient {
                 .any(|g| g == &settings.managed_group)
             && models_match_expected_or_legacy(
                 &models,
-                &settings.alias_model,
+                settings,
                 &registered.model_id,
             )
             && mapping
@@ -303,7 +303,7 @@ impl NewApiClient {
                 .any(|g| g == &settings.managed_group)
             && models_match_expected_or_legacy(
                 &models,
-                &settings.alias_model,
+                settings,
                 &registered.model_id,
             )
             && str_field(&live, "tag") == settings.managed_tag
@@ -327,7 +327,7 @@ impl NewApiClient {
         let live = self.get_channel(registered.channel_id).await?;
         let mapping = parse_mapping(&live);
         let models = channel_models(&live);
-        if !models_match_expected(&models, &settings.alias_model, expected_model)
+        if !models_match_expected(&models, settings, expected_model)
             || mapping
                 .get(&settings.alias_model)
                 .map(|v| v.as_str())
@@ -355,7 +355,7 @@ impl NewApiClient {
         let mut patch = json!({
             "id": registered.channel_id,
             "key": key,
-            "models": desired_channel_models_string(&settings.alias_model, new_model),
+            "models": desired_channel_models_string(settings, new_model),
             "model_mapping": mapping_string(&settings.alias_model,new_model),
             "priority": registered.priority,
             "weight": settings.channel_weight,
@@ -425,7 +425,7 @@ impl NewApiClient {
         let live = self.assert_identity(settings, registered).await?;
         if models_match_expected(
             &channel_models(&live),
-            &settings.alias_model,
+            settings,
             &registered.model_id,
         ) {
             return Ok(false);
@@ -713,25 +713,29 @@ fn mapping_string(alias: &str, actual: &str) -> String {
     serde_json::to_string(&map).unwrap()
 }
 
-fn desired_channel_models(alias: &str, actual: &str) -> Vec<String> {
-    let mut models = vec![alias.to_string()];
-    if actual != alias {
-        models.push(actual.to_string());
+fn desired_channel_models(settings: &AppSettings, actual: &str) -> Vec<String> {
+    let mut models = vec![settings.alias_model.clone()];
+    if settings.expose_upstream_model && actual != settings.alias_model && !actual.trim().is_empty() {
+        models.push(actual.trim().to_string());
     }
     models
 }
 
-fn desired_channel_models_string(alias: &str, actual: &str) -> String {
-    desired_channel_models(alias, actual).join(",")
+fn desired_channel_models_string(settings: &AppSettings, actual: &str) -> String {
+    desired_channel_models(settings, actual).join(",")
 }
 
-fn models_match_expected(models: &[String], alias: &str, actual: &str) -> bool {
-    models == desired_channel_models(alias, actual)
+fn models_match_expected(models: &[String], settings: &AppSettings, actual: &str) -> bool {
+    let mut expected = desired_channel_models(settings, actual);
+    let mut actual_models = models.to_vec();
+    expected.sort();
+    actual_models.sort();
+    actual_models == expected
 }
 
-fn models_match_expected_or_legacy(models: &[String], alias: &str, actual: &str) -> bool {
-    models_match_expected(models, alias, actual)
-        || (actual != alias && models == [alias.to_string()])
+fn models_match_expected_or_legacy(models: &[String], settings: &AppSettings, actual: &str) -> bool {
+    models_match_expected(models, settings, actual)
+        || (actual != settings.alias_model && models == [settings.alias_model.clone()])
 }
 
 fn str_field(v: &Value, key: &str) -> String {
@@ -953,26 +957,39 @@ mod tests {
 
     #[test]
     fn managed_channel_exposes_alias_and_actual_model() {
+        let mut settings = AppSettings::default();
+        settings.alias_model = "ashan-ai-model".into();
+        settings.expose_upstream_model = true;
         assert_eq!(
             desired_channel_models_string(
-                "ashan-ai-model",
+                &settings,
                 "nvidia/nemotron-3-super-120b-a12b:free",
             ),
             "ashan-ai-model,nvidia/nemotron-3-super-120b-a12b:free"
+        );
+
+        settings.expose_upstream_model = false;
+        assert_eq!(
+            desired_channel_models_string(
+                &settings,
+                "nvidia/nemotron-3-super-120b-a12b:free",
+            ),
+            "ashan-ai-model"
         );
     }
 
     #[test]
     fn legacy_alias_only_models_remain_valid_for_migration() {
+        let settings = AppSettings::default();
         let legacy_models = vec!["ashan-ai-model".to_string()];
         assert!(models_match_expected_or_legacy(
             &legacy_models,
-            "ashan-ai-model",
+            &settings,
             "nvidia/nemotron-3-super-120b-a12b:free",
         ));
         assert!(!models_match_expected(
             &legacy_models,
-            "ashan-ai-model",
+            &settings,
             "nvidia/nemotron-3-super-120b-a12b:free",
         ));
     }
