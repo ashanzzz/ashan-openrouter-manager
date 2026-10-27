@@ -891,15 +891,16 @@ async fn run_inner(
                         "success",
                         "newapi_update",
                         "routing",
-                        format!("渠道 ID {} 已补齐路由分组", c.channel_id),
+                        format!("渠道 ID {} 已补齐配置（路由分组与模型列表）", c.channel_id),
                         Some(format!(
-                            "现在可同时通过所有权分组 {} 和请求分组 {} 参与 New API 路由",
+                            "现在可同时通过所有权分组 {} 和请求分组 {} 参与 New API 路由；模型包含: {}",
                             settings.managed_group,
                             if settings.routing_groups.is_empty() {
                                 "default".to_string()
                             } else {
                                 settings.routing_groups.join(",")
-                            }
+                            },
+                            crate::newapi::desired_channel_models_string(&settings, &c.model_id),
                         )),
                     )
                     .await;
@@ -910,7 +911,7 @@ async fn run_inner(
                         "success",
                         "newapi_update",
                         "routing",
-                        format!("渠道 ID {} 路由分组已正确", c.channel_id),
+                        format!("渠道 ID {} 路由分组与模型配置已正确", c.channel_id),
                         None,
                     )
                     .await;

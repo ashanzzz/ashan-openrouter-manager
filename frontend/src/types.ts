@@ -8,6 +8,7 @@ export interface Settings {
   newapi_base_url: string
   newapi_admin_user_id: string
   alias_model: string
+  expose_upstream_model: boolean
   managed_group: string
   routing_groups: string[]
   managed_tag: string

@@ -176,12 +176,8 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
-            && mapping
-                .get(&settings.alias_model)
-                .map(|v| v == &registered.model_id)
-                .unwrap_or(false)
+            && models.iter().any(|m| m == &settings.alias_model)
+            && mapping.get(&settings.alias_model).is_some()
             && str_field(&live, "tag") == settings.managed_tag
             && str_field(&live, "remark").contains(OWNER_ID)
             && str_field(&live, "remark").contains(&format!("rank={}", registered.rank));
@@ -206,12 +202,13 @@ impl NewApiClient {
         let groups = desired_channel_groups(settings);
         let group = groups.join(",");
         let headers = desired_channel_headers(settings);
+        let models_str = desired_channel_models_string(settings, &model.id);
         let mut channel = json!({
             "name": name,
             "type": settings.channel_type,
             "key": key,
             "base_url": settings.openrouter_upstream_base.trim_end_matches('/'),
-            "models": settings.alias_model,
+            "models": models_str,
             "groups": groups,
             "group": group,
             "priority": priority,
@@ -263,8 +260,7 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
+            && models.iter().any(|m| m == &settings.alias_model)
             && mapping
                 .get(&settings.alias_model)
                 .map(|v| v == &registered.model_id)
@@ -295,8 +291,7 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models.len() == 1
-            && models[0] == settings.alias_model
+            && models.iter().any(|m| m == &settings.alias_model)
             && str_field(&live, "tag") == settings.managed_tag
             && str_field(&live, "remark").contains(OWNER_ID)
             && str_field(&live, "remark").contains(&format!("rank={}", registered.rank));
@@ -341,10 +336,11 @@ impl NewApiClient {
         let groups = desired_channel_groups(settings);
         let group = groups.join(",");
         let headers = desired_channel_headers(settings);
+        let models_str = desired_channel_models_string(settings, new_model);
         let mut patch = json!({
             "id": registered.channel_id,
             "key": key,
-            "models": settings.alias_model,
+            "models": models_str,
             "model_mapping": mapping_string(&settings.alias_model,new_model),
             "priority": registered.priority,
             "weight": settings.channel_weight,
@@ -368,10 +364,9 @@ impl NewApiClient {
         Ok(())
     }
 
-    /// Keep the AOM ownership group and the actual request-routing groups separate.
-    /// Existing v3.0.9 channels only had `managed_group`, which meant a `default`
-    /// token could not see them. This reconciliation is intentionally independent
-    /// from model changes so an already-correct Top 3 is migrated on the next sync.
+    /// Keep the AOM ownership group, request-routing groups, and desired channel models in sync.
+    /// Reconciles groups and exposed models independently from ranking changes so that
+    /// existing channels are automatically migrated on the next sync when settings change.
     pub async fn ensure_routing_groups(
         &self,
         settings: &AppSettings,
@@ -379,9 +374,16 @@ impl NewApiClient {
         key: &str,
     ) -> Result<bool, AppError> {
         let live = self.assert_identity(settings, registered).await?;
-        let current = normalized_groups(channel_groups(&live));
-        let desired = desired_channel_groups(settings);
-        if current == desired {
+        let current_groups = normalized_groups(channel_groups(&live));
+        let desired_groups = desired_channel_groups(settings);
+        let mut current_models = channel_models(&live);
+        let mut desired_models = desired_channel_models(settings, &registered.model_id);
+        current_models.sort();
+        desired_models.sort();
+
+        let groups_match = current_groups == desired_groups;
+        let models_match = current_models == desired_models;
+        if groups_match && models_match {
             return Ok(false);
         }
 
@@ -391,14 +393,23 @@ impl NewApiClient {
             .await?;
 
         let updated = self.assert_identity(settings, registered).await?;
-        let actual = normalized_groups(channel_groups(&updated));
-        let expected = desired_channel_groups(settings);
-        if actual != expected {
+        let actual_groups = normalized_groups(channel_groups(&updated));
+        let mut actual_models = channel_models(&updated);
+        actual_models.sort();
+        if actual_groups != desired_groups {
             return Err(AppError::conflict(format!(
                 "渠道 {} 路由分组验证失败；期望 {}，实际 {}",
                 registered.channel_id,
-                expected.join(","),
-                actual.join(",")
+                desired_groups.join(","),
+                actual_groups.join(",")
+            )));
+        }
+        if actual_models != desired_models {
+            return Err(AppError::conflict(format!(
+                "渠道 {} 模型列表验证失败；期望 {}，实际 {}",
+                registered.channel_id,
+                desired_models.join(","),
+                actual_models.join(",")
             )));
         }
         Ok(true)
@@ -681,6 +692,21 @@ fn mapping_string(alias: &str, actual: &str) -> String {
     serde_json::to_string(&map).unwrap()
 }
 
+pub fn desired_channel_models(settings: &AppSettings, actual_model_id: &str) -> Vec<String> {
+    let mut list = vec![settings.alias_model.clone()];
+    if settings.expose_upstream_model {
+        let trimmed = actual_model_id.trim();
+        if !trimmed.is_empty() && trimmed != settings.alias_model {
+            list.push(trimmed.to_string());
+        }
+    }
+    list
+}
+
+pub fn desired_channel_models_string(settings: &AppSettings, actual_model_id: &str) -> String {
+    desired_channel_models(settings, actual_model_id).join(",")
+}
+
 fn str_field(v: &Value, key: &str) -> String {
     v.get(key)
         .and_then(|x| x.as_str())
@@ -905,6 +931,40 @@ mod tests {
         settings.openrouter_x_title = "".into();
         settings.openrouter_user_agent = "".into();
         assert_eq!(desired_channel_headers(&settings), None);
+    }
+
+    #[test]
+    fn desired_channel_models_with_and_without_expose() {
+        let mut settings = AppSettings::default();
+        settings.alias_model = "ashan-ai-model".into();
+        settings.expose_upstream_model = false;
+        assert_eq!(
+            desired_channel_models(&settings, "nvidia/nemotron-3.5-super-vl:free"),
+            vec!["ashan-ai-model".to_string()]
+        );
+        assert_eq!(
+            desired_channel_models_string(&settings, "nvidia/nemotron-3.5-super-vl:free"),
+            "ashan-ai-model"
+        );
+
+        settings.expose_upstream_model = true;
+        assert_eq!(
+            desired_channel_models(&settings, "nvidia/nemotron-3.5-super-vl:free"),
+            vec![
+                "ashan-ai-model".to_string(),
+                "nvidia/nemotron-3.5-super-vl:free".to_string()
+            ]
+        );
+        assert_eq!(
+            desired_channel_models_string(&settings, "nvidia/nemotron-3.5-super-vl:free"),
+            "ashan-ai-model,nvidia/nemotron-3.5-super-vl:free"
+        );
+
+        // If actual_model_id equals alias_model, do not duplicate
+        assert_eq!(
+            desired_channel_models(&settings, "ashan-ai-model"),
+            vec!["ashan-ai-model".to_string()]
+        );
     }
 }
 
