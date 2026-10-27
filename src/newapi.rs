@@ -176,15 +176,9 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models_match_expected_or_legacy(
-                &models,
-                settings,
-                &registered.model_id,
-            )
-            && mapping
-                .get(&settings.alias_model)
-                .map(|v| v == &registered.model_id)
-                .unwrap_or(false)
+            && (models.iter().any(|m| m == &settings.alias_model)
+                || mapping.contains_key(&settings.alias_model))
+            && mapping.get(&settings.alias_model).is_some()
             && str_field(&live, "tag") == settings.managed_tag
             && str_field(&live, "remark").contains(OWNER_ID)
             && str_field(&live, "remark").contains(&format!("rank={}", registered.rank));
@@ -293,6 +287,7 @@ impl NewApiClient {
     ) -> Result<Value, AppError> {
         let live = self.get_channel(registered.channel_id).await?;
         let models = channel_models(&live);
+        let mapping = parse_mapping(&live);
         let ok = live.get("id").and_then(|v| v.as_i64()) == Some(registered.channel_id)
             && str_field(&live, "name") == registered.name
             && live.get("type").and_then(|v| v.as_i64()) == Some(settings.channel_type)
@@ -301,11 +296,8 @@ impl NewApiClient {
             && channel_groups(&live)
                 .iter()
                 .any(|g| g == &settings.managed_group)
-            && models_match_expected_or_legacy(
-                &models,
-                settings,
-                &registered.model_id,
-            )
+            && (models.iter().any(|m| m == &settings.alias_model)
+                || mapping.contains_key(&settings.alias_model))
             && str_field(&live, "tag") == settings.managed_tag
             && str_field(&live, "remark").contains(OWNER_ID)
             && str_field(&live, "remark").contains(&format!("rank={}", registered.rank));

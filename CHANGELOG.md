@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.13
+
+- Eliminated pre-sync ownership deadlock in `assert_owned` and `assert_identity`: ownership verification now verifies immutable channel attributes (`id`, `name`, `type`, `base_url`, `managed_group`, `managed_tag`, `remark` with `OWNER_ID` and `rank`, and alias presence) without asserting live upstream model equality before synchronization.
+- Strict model mapping and exposure verification is now enforced post-sync via `assert_model`.
+- Allows channels modified in New API to be safely recognized and overwritten by automated Top 3 rotation.
+
 ## v3.0.12
 
 - New and updated AOM-managed New API channels now expose both the stable public alias (`ashan-ai-model`) and their selected real OpenRouter model ID (for example, `nvidia/nemotron-3-super-120b-a12b:free`).
